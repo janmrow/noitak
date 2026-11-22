@@ -15,8 +15,11 @@ function print(data) {
   else if (data.diagnostic) console.error(Object.values(data.diagnostic).join(' '));
   else if (data.changes) {
     console.log(data.passed ? 'Policy passed' : 'Review required');
-    for (const c of data.changes)
+    for (const c of data.changes) {
       console.log(c.status, c.subject, c.field, JSON.stringify(c.before), '->', JSON.stringify(c.after));
+      if (c.witness) console.log('  Witness', JSON.stringify(c.witness));
+      if (c.equalOutcomes) console.log('  Equal outcomes on', c.equalOutcomes, 'tuples');
+    }
   } else console.log(JSON.stringify(data, null, 2));
 }
 async function load(path) {
