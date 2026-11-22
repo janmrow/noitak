@@ -1,0 +1,7 @@
+[
+  {"id":"01","candidate":"rewrite.noi","engine":"symbolic","decision":"accept","findings":{"body":"compatible"}},
+  {"id":"02","candidate":"promise.noi","engine":"symbolic","decision":"review","findings":{"ensures":"risky"}},
+  {"id":"03","candidate":"overwrite.noi","engine":"symbolic","decision":"review","findings":{"ensures":"risky","body":"risky"}},
+  {"id":"04","candidate":"permission.noi","engine":"symbolic","decision":"review","findings":{"reads":"policy-violation"}},
+  {"id":"05","candidate":"rewrite.noi","engine":"enumerate","limit":65536,"decision":"review","findings":{"required-proof":"policy-violation"}}
+]

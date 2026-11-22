@@ -1,0 +1,9 @@
+(module delivery 1.1.0
+  (enum receipt (pending) (received byte))
+  (fn acknowledge ((status receipt) (sequence byte)) receipt
+    (reads)
+    (requires true)
+    (ensures (match result (pending false) (received id true)))
+    (match status
+      (pending (tag receipt received sequence))
+      (received prior status))))
