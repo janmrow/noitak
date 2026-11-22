@@ -29,3 +29,19 @@ Strict operands evaluate left to right. There are no loops, function calls, recu
 Each call receives arguments and a snapshot of the authorized boolean flags. Both contracts must type as bool. The precondition sees parameters and flags. The postcondition also sees the normal return value as `result`. A false precondition rejects the call. A fault in a contract is a failure. After an admitted call the body must return normally and its postcondition must hold. The public result is a tagged union carrying either a value or an error code. See the generated declarations for the boundary types.
 
 Every declared flag is required at entry, including unused declarations. The only effect is reading these supplied values. No operation opens a file, invokes a callback or changes the host. Application code decides how to obtain and authorize flag values.
+
+## Host boundary
+
+Call `api.functionName(flags, ...positionalArguments)` with an object and exact arity. Each required flag must be an own data property with a boolean value. Accessors and inherited grants fail the check, extra fields are ignored, and the evaluator reads a private snapshot. Use ordinary data objects. A host-supplied Proxy can run host code during descriptor lookup. A thrown descriptor trap yields a capability error. Host code controls its own JavaScript realm.
+
+A byte argument must be an integer-valued JS number in range. Negative zero becomes zero. A bool must be a primitive boolean. Validation checks the arguments before the flags. Success returns `{ok:true,value}`. Failure returns `{ok:false,code,phase}`.
+
+| Code | Phase | Cause |
+| --- | --- | --- |
+| ARGUMENT | boundary | Wrong argument count, range or primitive type |
+| CAPABILITY | boundary | Invalid flag object or required property |
+| PRECONDITION | requires | False admission predicate |
+| ARITHMETIC | requires, body or ensures | Checked addition or subtraction outside the byte range |
+| POSTCONDITION | ensures | False return predicate |
+
+Lists nest up to 128 levels. A module must have at least one function. Functions cannot call each other. Parameter tuples, the flag object and the result union are boundary structures. The expression language has scalar types only.
