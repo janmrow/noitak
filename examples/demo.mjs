@@ -6,13 +6,13 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const dir = mkdtempSync(join(tmpdir(), 'noi-demo-'));
+const dir = mkdtempSync(join(tmpdir(), 'noitak-demo-'));
 function run(args, expected = 0) {
   const p = spawnSync(process.execPath, args, { cwd: root, encoding: 'utf8' });
   if (p.error || p.status !== expected) throw new Error(p.error?.message ?? (p.stdout + p.stderr));
   return p.stdout.trim();
 }
-const cli = (args, expected) => JSON.parse(run(['noi.mjs', ...args, '--json'], expected));
+const cli = (args, expected) => JSON.parse(run(['noitak.mjs', ...args, '--json'], expected));
 try {
   const built = cli(['build', 'examples/quota.noi', join(dir, 'quota')]);
   console.log('Verified input tuples:', built.checks[0].examined);

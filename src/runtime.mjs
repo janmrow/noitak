@@ -63,4 +63,14 @@ function invoke(f, flags, args) {
   return execute(f, args.map(v => Object.is(v, -0) ? 0 : v), snapshot);
 }
 
-export { execute, invoke };
+function predicate(f, field, args, flags, result) {
+  const env = new Map(f.params.map(([key], i) => [key, args[i]]));
+  if (field === 'ensures') env.set('result', result);
+  try { return evaluate(f[field], env, flags); }
+  catch (e) {
+    if (e instanceof RangeFault) return 'arithmetic-fault';
+    throw e;
+  }
+}
+
+export { execute, invoke, predicate };

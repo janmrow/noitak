@@ -21,7 +21,7 @@ function declarations(functions) {
 export async function build(unit, report, destination) {
   if (!report.passed) throw new Error('Required proof failed');
   const runtime = await readFile(new URL('./runtime.mjs', import.meta.url), 'utf8');
-  const core = runtime.replace('export { execute, invoke };', '');
+  const core = runtime.replace('export { execute, invoke, predicate };', '');
   const functions = JSON.stringify(unit.functions.map(({loc, ...f}) => f));
   const js = core + '\nconst functions = ' + functions + ';\n' +
     'export const api = Object.freeze(Object.fromEntries(functions.map(f => [f.name, (flags, ...args) => invoke(f, flags, args)])));\n';
@@ -33,7 +33,7 @@ export async function build(unit, report, destination) {
     throw new Error('Build destination already exists: ' + target);
   } catch (e) { if (e.code !== 'ENOENT') throw e; }
   await mkdir(dirname(target), { recursive: true });
-  const temp = await mkdtemp(join(dirname(target), '.noi-'));
+  const temp = await mkdtemp(join(dirname(target), '.noitak-'));
   try {
     for (const [file, data] of [['module.mjs', js], ['module.d.mts', types],
       ['report.json', JSON.stringify(manifest, null, 2) + '\n']])

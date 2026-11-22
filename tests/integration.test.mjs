@@ -14,9 +14,9 @@ function run(args, status = 0) {
   assert.equal(p.status,status,p.error?.message ?? (p.stderr + p.stdout));
   return p.stdout;
 }
-const cli = (args, status) => JSON.parse(run(['noi.mjs',...args,'--json'],status));
+const cli = (args, status) => JSON.parse(run(['noitak.mjs',...args,'--json'],status));
 function temporary(t) {
-  const dir = mkdtempSync(join(tmpdir(),'noi-test-'));
+  const dir = mkdtempSync(join(tmpdir(),'noitak-test-'));
   t.after(() => rmSync(dir,{recursive:true,force:true}));
   return dir;
 }

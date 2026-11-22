@@ -1,5 +1,6 @@
 import { domainOf } from './domain.mjs';
 import { execute } from './runtime.mjs';
+import { refinement } from './refinement.mjs';
 const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 function compareBodies(old, next) {
@@ -36,11 +37,16 @@ export function compare(oldUnit, newUnit, before, after) {
       if (field === 'reads') {
         status = next.reads.some(k => !old.reads.includes(k)) ? 'policy-violation' : 'compatible';
       }
-      // Compare complete outcomes only when both proofs cover the same API and contracts.
-      if (field === 'body' && ['params','output','reads','requires','ensures'].every(k => equal(old[k],next[k])) &&
-          previous.get(old.name).status === 'proven' && current.get(old.name).status === 'proven') {
-        const evidence = compareBodies(old, next);
-        changes.push({ subject: old.name, field, ...evidence, before: old.body, after: next.body });
+      const comparable = ['params', 'output', 'reads'].every(k => equal(old[k], next[k])) &&
+        previous.get(old.name).status === 'proven' && current.get(old.name).status === 'proven';
+      const limit = after.configuration.maxCasesPerFunction;
+      if (comparable && ['requires', 'ensures'].includes(field)) {
+        changes.push({ subject: old.name, field, before: old[field], after: next[field],
+          ...refinement(old, next, field, limit) });
+      } else if (comparable && field === 'body' && equal(old.requires, next.requires) &&
+          equal(old.ensures, next.ensures) && domainOf(old).total <= BigInt(limit)) {
+        changes.push({ subject: old.name, field, before: old.body, after: next.body,
+          ...compareBodies(old, next) });
       } else record(old.name, field, status, old[field], next[field]);
     }
     if (!equal(previous.get(old.name), current.get(old.name)))
