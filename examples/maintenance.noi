@@ -1,0 +1,8 @@
+(module quota 0.2.0
+  (fn remaining ((available byte) (requested byte)) byte
+    (reads paused)
+    (requires true)
+    (ensures (if (flag paused) (= result available)
+                 (= (+ result (if (< available requested) available requested)) available)))
+    (if (flag paused) available
+        (if (< available requested) 0 (- available requested)))))

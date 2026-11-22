@@ -1,0 +1,8 @@
+(module quota 0.1.0
+  ; Remaining capacity after serving as much of the request as possible.
+  (fn remaining ((available byte) (requested byte)) byte
+    (reads)
+    (requires true)
+    (ensures (and (<= result available)
+                 (= (+ result (if (< available requested) available requested)) available)))
+    (if (< available requested) available (- available requested))))

@@ -1,0 +1,5 @@
+[
+  {"fn":"remaining","flags":{},"args":[8,3],"expected":{"ok":true,"value":5}},
+  {"fn":"remaining","flags":{},"args":[8,20],"expected":{"ok":true,"value":0}},
+  {"fn":"remaining","flags":{},"args":[256,3],"expected":{"ok":false,"code":"ARGUMENT","phase":"boundary"}}
+]
