@@ -1,4 +1,4 @@
-# Noitak 0.2
+# Noitak 0.3
 
 A source file holds one module. Forms are parenthesized, whitespace separates atoms, and a semicolon starts a line comment. Positions count UTF-16 code units from one. Declaration order inside a function is fixed.
 

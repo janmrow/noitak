@@ -1,4 +1,4 @@
-# Noitak 0.2
+# Noitak 0.3
 
 Noitak is an experimental language for small decisions that need independently checkable contracts. Its compiler accepts functions over bytes, booleans and finite tagged values, checks their declared reads, and can exhaustively verify their behavior before producing an ES module. Its change gate asks a different question from the proof gate. Two versions can each satisfy their contracts and still differ in behavior or authority.
 
@@ -15,6 +15,28 @@ npm run demo
 ```
 
 The demo builds the quota example in a temporary directory, compiles a strict TypeScript caller, runs it, finds a failing input in a second implementation, and compares a proposed update with the original module.
+
+## Run the change-review pilot
+
+Use Node.js 22+ and Python 3 with venv and pip. From the repository root:
+
+```sh
+npm ci
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -r requirements-symbolic.txt
+npm run pilot -- build/pilot
+```
+
+Open the numbered `review.txt` files beside `build/pilot/worksheet.md`. One candidate may be built. Four others exercise a weakened guarantee, a changed observable result, a new permission and a proof budget refusal. The runner checks the expected decisions, validates artifact digests, compiles a strict TypeScript consumer and invokes the approved module. Use a fresh output directory for another session. [Participant instructions and requirement](pilot/delivery/README.md)
+
+To gate a single candidate from a host project, supply the accepted baseline from your trusted revision and a fresh destination. The command takes one snapshot of the candidate and builds from that snapshot only after its comparison passes.
+
+```sh
+node noitak.mjs gate examples/delivery.noi pilot/delivery/rewrite.noi build/accepted --engine symbolic
+```
+
+The accepted bundle includes `module.mjs`, `module.d.mts`, `review.json` and `report.json`. Check the exit status before using it. Independent verification is available with `verify` and comparison without writing artifacts with `diff`.
 
 ## A verified module
 
@@ -94,7 +116,8 @@ The inventory module has 16,777,216 possible inputs. Z3 checks whether any input
 | verify FILE | Every required proof passes |
 | build FILE NEW_DIR | Verification passes and all artifacts are written |
 | test FILE VECTORS | All JSON vectors match the observed tagged outcomes |
-| diff OLD NEW | The candidate passes verification and the comparison has only compatible changes |
+| diff OLD NEW | Both revisions pass verification and all findings are compatible |
+| gate OLD NEW NEW_DIR | The comparison passes and the candidate bundle is written |
 
 The original `node noi.mjs` entry point remains available for existing scripts. Append `--json` for a single machine-readable JSON object on stdout. Verification and comparison accept `--limit N` (1 through 1,000,000 per function). Exit 0 means the requested command succeeded, 1 indicates a source diagnostic, failed test, blocked proof or change requiring review, and 2 indicates an invocation, I/O, data-format or tool error. CI should require exit 0 and consume output from that invocation. Source diagnostics include a stable code, file and one-based line and column. Success of check is only static acceptance.
 

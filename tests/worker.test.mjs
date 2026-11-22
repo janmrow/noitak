@@ -26,3 +26,13 @@ test('relational solver requires a matching query and a replayable typed witness
     assert.equal(r.status,'undetermined');
   }
 });
+test('relational replay treats host extra fields like the compiled boundary', async () => {
+  const {solveRelation} = await import('../src/symbolic.mjs');
+  const old = compile(`(module m 1.0.0 (enum e (absent))
+    (fn f ((x e)) bool (reads) (requires true) (ensures (= x (tag e absent))) true))`).functions[0];
+  const fake = {relation:'ensures',answer:'sat',solverVersion:'fixture',
+    input:{args:[{tag:'absent',value:5}],flags:{},result:false}};
+  const next = {...old, ensures:true};
+  const r = solveRelation(old,next,[],'ensures',()=>({status:0,stdout:JSON.stringify(fake)}));
+  assert.equal(r.reason,'model-replay-disagreement');
+});

@@ -130,3 +130,19 @@ test('missing solver process blocks symbolic build and preserves legacy CLI alia
   assert.equal(JSON.parse(p.stdout).checks[0].reason,'ENOENT');
   assert.equal(existsSync(output),false);
 });
+test('gate builds from the compared revision and keeps an earlier bundle intact on refusal', t => {
+  const dir = temporary(t), out = join(dir,'approved');
+  const source = join(dir,'candidate.noi');
+  const baseline = 'examples/refinement/original.noi';
+  writeFileSync(source,readFileSync(baseline));
+  const approved = cli(['gate',baseline,source,out]);
+  const manifest = JSON.parse(readFileSync(join(out,'report.json')));
+  assert.equal(approved.after.sourceSha256,manifest.sourceSha256);
+  assert.equal(manifest.artifacts['review.json'],sha(join(out,'review.json')));
+  const earlier = sha(join(out,'module.mjs'));
+  writeFileSync(source,readFileSync('examples/refinement/weakened.noi'));
+  const denied = cli(['gate',baseline,source,out],1);
+  assert.equal(denied.changes[0].witnessKind,'hypothetical-result');
+  assert.equal(denied.artifact,undefined);
+  assert.equal(sha(join(out,'module.mjs')),earlier);
+});

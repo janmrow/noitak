@@ -7,21 +7,16 @@ import { compare } from './src/diff.mjs';
 import { build } from './src/backend.mjs';
 import { testVectors } from './src/vectors.mjs';
 
-const usage = 'noitak <check FILE | verify FILE | build FILE NEW_DIR | diff OLD NEW | test FILE VECTORS> [--json] [--limit N] [--engine enumerate|symbolic]';
+import { formatReview } from './src/review.mjs';
+
+const usage = 'noitak <check FILE | verify FILE | build FILE NEW_DIR | diff OLD NEW | gate OLD NEW NEW_DIR | test FILE VECTORS> [--json] [--limit N] [--engine enumerate|symbolic]';
 const argv = process.argv.slice(2);
 const json = argv.includes('--json');
 function print(data) {
   if (json) console.log(JSON.stringify(data));
   else if (data.diagnostic) console.error(Object.values(data.diagnostic).join(' '));
-  else if (data.changes) {
-    console.log(data.passed ? 'Policy passed' : 'Review required');
-    for (const c of data.changes) {
-      console.log(c.status, c.subject, c.field, JSON.stringify(c.before), '->', JSON.stringify(c.after));
-      if (c.reason) console.log('  Reason', c.reason);
-      if (c.witness) console.log('  Witness', JSON.stringify(c.witness));
-      if (c.equalOutcomes) console.log('  Equal outcomes on', c.equalOutcomes, 'tuples');
-    }
-  } else console.log(JSON.stringify(data, null, 2));
+  else if (data.changes) console.log(formatReview(data));
+  else console.log(JSON.stringify(data, null, 2));
 }
 async function load(path) {
   const bytes = await readFile(path);
@@ -43,14 +38,14 @@ async function main() {
     if (tokens[i] === '--limit') limit = Number(tokens[++i]);
     else if (tokens[i] === '--engine') {
       engine = tokens[++i];
-      if (!['verify','diff','build'].includes(command) || !['symbolic','enumerate'].includes(engine))
+      if (!['verify','diff','build','gate'].includes(command) || !['symbolic','enumerate'].includes(engine))
         throw new Error(usage);
     }
     else if (tokens[i] === '--json') continue;
     else if (tokens[i].startsWith('--')) throw new Error(usage);
     else positions.push(tokens[i]);
   }
-  const counts = new Map([['check',1], ['verify',1], ['test',2], ['build',2], ['diff',2]]);
+  const counts = new Map([['check',1], ['verify',1], ['test',2], ['build',2], ['diff',2], ['gate',3]]);
   if (positions.length !== counts.get(command) || !Number.isSafeInteger(limit) || limit < 1 || limit > 1000000)
     throw new Error(usage);
   const [path, other] = positions;
@@ -60,9 +55,14 @@ async function main() {
   else if (command === 'test') report = testVectors(unit, JSON.parse(await readFile(other, 'utf8')));
   else {
     report = verify(unit, bytes, limit, engine);
-    if (command === 'diff') {
+    if (command === 'diff' || command === 'gate') {
       const newer = await load(other);
-      report = compare(unit, newer.unit, report, verify(newer.unit, newer.bytes, limit, engine));
+      const candidate = verify(newer.unit, newer.bytes, limit, engine);
+      report = compare(unit, newer.unit, report, candidate);
+      if (command === 'gate' && report.passed) {
+        await build(newer.unit, candidate, positions[2], report);
+        report = { ...report, artifact: positions[2] };
+      }
     } else if (command === 'build' && report.passed) report = await build(unit, report, other);
   }
   print(report);

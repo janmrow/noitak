@@ -4,7 +4,7 @@ import { execute } from './runtime.mjs';
 
 import { solve, symbolicConfig } from './symbolic.mjs';
 
-export const VERSION = '0.2.0';
+export const VERSION = '0.3.0';
 export const DEFAULT_LIMIT = 65536;
 export const hash = data => createHash('sha256').update(data).digest('hex');
 

@@ -16,8 +16,9 @@ function query(request, spawn) {
   let answer;
   try { answer = JSON.parse(proc.stdout); } catch { return unknown('invalid-worker-response'); }
   if (!answer || typeof answer !== 'object') return unknown('invalid-worker-response');
-  if (answer.status === 'unverified' && typeof answer.reason === 'string')
-    return { ...unknown(answer.reason), solverVersion: answer.solverVersion };
+  if (answer.status === 'unverified')
+    return { ...unknown(typeof answer.reason === 'string' ? answer.reason : 'invalid-worker-response'),
+      solverVersion: answer.solverVersion };
   if (typeof answer.solverVersion !== 'string') return unknown('invalid-worker-response');
   return answer;
 }
@@ -43,10 +44,11 @@ export function solve(f, enums, spawn = spawnSync) {
 
 function replay(old, next, field, input) {
   if (!Array.isArray(input?.args) || !input.flags || typeof input.flags !== 'object') return;
-  const {args, flags} = input;
-  if (args.length !== old.params.length || args.some((v, i) => argument(old.params[i][1], v) === undefined) ||
-      old.reads.some(k => typeof flags[k] !== 'boolean')) return;
-  const grants = new Map(Object.entries(flags));
+  if (input.args.length !== old.params.length) return;
+  const args = old.params.map(([,type], i) => argument(type, input.args[i]));
+  if (args.includes(undefined) || old.reads.some(k => typeof input.flags[k] !== 'boolean')) return;
+  const grants = new Map(old.reads.map(k => [k, input.flags[k]]));
+  const flags = Object.fromEntries(grants);
   const oldPre = predicate(old, 'requires', args, grants);
   const newPre = predicate(next, 'requires', args, grants);
   if (oldPre !== true) return;

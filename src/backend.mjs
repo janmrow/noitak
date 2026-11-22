@@ -23,7 +23,7 @@ function declarations({ functions, enums }) {
   return [...lines, '};', ''].join('\n');
 }
 
-export async function build(unit, report, destination) {
+export async function build(unit, report, destination, review) {
   if (!report.passed) throw new Error('Required proof failed');
   const runtime = await readFile(new URL('./runtime.mjs', import.meta.url), 'utf8');
   const core = runtime.replace('export { argument, execute, invoke, predicate };', '');
@@ -31,7 +31,15 @@ export async function build(unit, report, destination) {
   const js = core + '\nconst functions = ' + functions + ';\n' +
     'export const api = Object.freeze(Object.fromEntries(functions.map(f => [f.name, (flags, ...args) => invoke(f, flags, args)])));\n';
   const types = declarations(unit);
-  const manifest = { ...report, artifacts: { 'module.mjs': hash(js), 'module.d.mts': hash(types) } };
+  const files = new Map([['module.mjs', js], ['module.d.mts', types]]);
+  if (review) {
+    if (!review.passed || review.after.sourceSha256 !== report.sourceSha256)
+      throw new Error('Review does not authorize this source');
+    files.set('review.json', JSON.stringify(review, null, 2) + '\n');
+  }
+  const artifacts = Object.fromEntries([...files].map(([name, content]) => [name, hash(content)]));
+  const manifest = { ...report, artifacts };
+  files.set('report.json', JSON.stringify(manifest, null, 2) + '\n');
   const target = resolve(destination);
   try {
     await lstat(target);
@@ -40,8 +48,7 @@ export async function build(unit, report, destination) {
   await mkdir(dirname(target), { recursive: true });
   const temp = await mkdtemp(join(dirname(target), '.noitak-'));
   try {
-    for (const [file, data] of [['module.mjs', js], ['module.d.mts', types],
-      ['report.json', JSON.stringify(manifest, null, 2) + '\n']])
+    for (const [file, data] of files)
       await writeFile(join(temp, file), data);
     await rename(temp, target);
   } finally { await rm(temp, { recursive: true, force: true }); }

@@ -23,7 +23,8 @@ function compareField(old, next, field, context) {
   const {configuration, proven, enums} = context;
   const domain = domainOf(old).total * (field === 'ensures' ? BigInt(cardinality(old.output)) : 1n);
   const symbolic = configuration.method === symbolicConfig.method;
-  const evidence = { method: symbolic ? 'symbolic' : 'enumerate', comparisonDomain: String(domain) };
+  const evidence = { method: symbolic ? 'symbolic' : 'enumerate', comparisonDomain: String(domain),
+    parameters: old.params.map(([name]) => name) };
   const unresolved = reason => ({ ...evidence, status: 'undetermined', reason });
   if (!proven) return unresolved('missing-function-proof');
   if (!['params', 'output', 'reads'].every(k => equal(old[k], next[k])))
@@ -67,8 +68,11 @@ export function compare(oldUnit, newUnit, before, after) {
       if (equal(old[field], next[field])) continue;
       if (['requires', 'ensures', 'body'].includes(field)) {
         const proven = previous.get(old.name).status === 'proven' && current.get(old.name).status === 'proven';
-        changes.push({ subject: old.name, field, before: old[field], after: next[field],
-          ...compareField(old, next, field, {configuration: after.configuration, proven, enums}) });
+        const finding = compareField(old, next, field, {configuration: after.configuration, proven, enums});
+        if (finding.witness) finding.witnessKind = {
+          requires: 'lost-admission', ensures: 'hypothetical-result', body: 'observed-returns'
+        }[field];
+        changes.push({ subject: old.name, field, before: old[field], after: next[field], ...finding });
       } else {
         let status = 'risky';
         if (field === 'reads')
@@ -86,7 +90,7 @@ export function compare(oldUnit, newUnit, before, after) {
   for (const [report, field] of [[before, 'baseline-proof'], [after, 'required-proof']]) {
     for (const c of report.checks) if (c.status !== 'proven')
       changes.push({ subject: c.function, field, status: 'policy-violation',
-        reason: c.reason ?? c.status, proofStatus: c.status, counterexample: c.counterexample });
+        reason: c.reason ?? c.status, proofDomain: c.domain, proofStatus: c.status, counterexample: c.counterexample });
   }
   return { schema: 3, toolVersion: after.toolVersion, configuration: after.configuration,
     before, after,
