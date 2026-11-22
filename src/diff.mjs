@@ -64,8 +64,7 @@ export function compare(oldUnit, newUnit, before, after) {
   }
   for (const c of after.checks) if (c.status !== 'proven')
     record(c.function, 'required-proof', 'policy-violation', previous.get(c.function) ?? null, c.status);
-  return { schema: 1, toolVersion: after.toolVersion, configuration: after.configuration,
-    before: { module: before.module, version: before.version, sourceSha256: before.sourceSha256 },
-    after: { module: after.module, version: after.version, sourceSha256: after.sourceSha256 },
+  return { schema: 2, toolVersion: after.toolVersion, configuration: after.configuration,
+    before, after,
     changes, passed: changes.every(c => c.status === 'compatible') };
 }

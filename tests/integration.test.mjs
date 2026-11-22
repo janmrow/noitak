@@ -107,3 +107,26 @@ api.remaining({paused: false}, 2, false);
 `);
   run(['node_modules/typescript/bin/tsc','--strict','--module','nodenext','--noEmit',host]);
 });
+test('generated tagged union narrows in TypeScript and preserves an existing receipt', t => {
+  const dir = temporary(t);
+  cli(['build','examples/delivery.noi',join(dir,'delivery'),'--limit','65792']);
+  const host = join(dir,'host.mts');
+  writeFileSync(host, `import { api, type Enum_receipt } from './delivery/module.mjs';
+const prior: Enum_receipt = {tag:'received',value:17};
+const receipt = api.acknowledge({},prior,23);
+if (!receipt.ok || receipt.value.tag !== 'received') throw Error('missing receipt');
+console.log(receipt.value.value);
+// @ts-expect-error payload required
+api.acknowledge({}, {tag:'received'}, 23);`);
+  run(['node_modules/typescript/bin/tsc','--strict','--module','nodenext',host]);
+  assert.equal(run([join(dir,'host.mjs')]).trim(),'17');
+});
+test('missing solver process blocks symbolic build and preserves legacy CLI alias', t => {
+  const dir = temporary(t);
+  const output = join(dir,'artifact');
+  const p = spawnSync(process.execPath,['noi.mjs','build',good,output,'--engine','symbolic','--json'],
+    {encoding:'utf8',env:{...process.env,PATH:dir}});
+  assert.equal(p.status,1);
+  assert.equal(JSON.parse(p.stdout).checks[0].reason,'ENOENT');
+  assert.equal(existsSync(output),false);
+});

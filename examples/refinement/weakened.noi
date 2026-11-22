@@ -1,0 +1,6 @@
+(module counter 1.1.0
+  (fn next ((x byte)) byte
+    (reads)
+    (requires (< x 255))
+    (ensures (<= x result))
+    (+ x 1)))

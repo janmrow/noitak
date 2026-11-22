@@ -1,0 +1,10 @@
+(module inventory 1.0.0
+  ; Preserve inventory when fulfilling an order would breach the reserve.
+  (fn allocate ((stock byte) (ordered byte) (reserve byte)) byte
+    (reads)
+    (requires (<= reserve stock))
+    (ensures (and (<= reserve result)
+                 (= result (if (<= ordered (- stock reserve)) (- stock ordered) stock))))
+    (if (<= ordered stock)
+        (let remaining (- stock ordered) (if (< remaining reserve) stock remaining))
+        stock)))

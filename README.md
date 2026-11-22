@@ -1,10 +1,12 @@
-# Noitak 0.1
+# Noitak 0.2
 
-Noitak is an experimental language for small decisions that need independently checkable contracts. Its compiler accepts bounded integer and boolean functions, checks their declared reads, and can exhaustively verify their behavior before producing an ES module. Its change gate asks a different question from the proof gate. Two versions can each satisfy their contracts and still differ in behavior or authority.
+Noitak is an experimental language for small decisions that need independently checkable contracts. Its compiler accepts functions over bytes, booleans and finite tagged values, checks their declared reads, and can exhaustively verify their behavior before producing an ES module. Its change gate asks a different question from the proof gate. Two versions can each satisfy their contracts and still differ in behavior or authority.
+
+Verification comes first because generating an implementation can cost less than reviewing its consequences. An agent can write the function and propose its contract. A reviewer needs independent evidence about admission, guarantees, and authority before accepting the change. Noitak source files use the `.noi` extension. [Project philosophy](docs/philosophy.md)
 
 ## Run the experiment
 
-Use Node.js 22+ and npm. The compiler uses Node built-ins. The only development dependency is the pinned TypeScript compiler used to check the host application.
+Use Node.js 22+ and npm. The compiler uses Node built-ins. The default workflow uses the pinned TypeScript compiler to check the host application. The optional symbolic engine uses Python and Z3.
 
 ```sh
 npm ci
@@ -60,6 +62,30 @@ node noitak.mjs diff examples/quota.noi examples/maintenance.noi --limit 131072 
 
 The first command finds a request of two units against one available. The implementation returns one when the contract requires zero. The second encounters a domain larger than the default budget of 65,536 tuples per function. The third allows both proofs to finish. It flags a new read of the host's paused flag and a changed contract. It grants no deployment approval.
 
+## Contract review and tagged values
+
+```sh
+node noitak.mjs diff examples/refinement/original.noi examples/refinement/weakened.noi
+node noitak.mjs verify examples/delivery.noi --limit 65792
+```
+
+The first command exits 1. For input 0 the revised contract permits a hypothetical return of 0. The old promise required 1. Both bodies still return 1. The second command proves that acknowledging a delivery preserves an existing receipt or records the new sequence number. Its domain has 257 receipt states and 256 possible sequence numbers.
+
+## Optional symbolic proof
+
+From a Python 3 environment with venv and pip available:
+
+```sh
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -r requirements-symbolic.txt
+npm run test:symbolic
+node noitak.mjs verify examples/reserve.noi --engine symbolic --json
+node noitak.mjs build examples/reserve.noi build/inventory --engine symbolic
+```
+
+The inventory module has 16,777,216 possible inputs. Z3 checks whether any input could fault or violate the contract, then checks that at least one input is admitted. The proof report records both solver answers. Z3 runs during symbolic verification. The generated JS module runs in the host with no Python or Z3 installation.
+
 ## CLI in automation
 
 | Command | Success condition |
@@ -70,7 +96,7 @@ The first command finds a request of two units against one available. The implem
 | test FILE VECTORS | All JSON vectors match the observed tagged outcomes |
 | diff OLD NEW | The candidate passes verification and the comparison has only compatible changes |
 
-Append `--json` for a single machine-readable JSON object on stdout. Verification and comparison accept `--limit N` (1 through 1,000,000 per function). Exit 0 means the requested command succeeded, 1 indicates a source diagnostic, failed test, blocked proof or change requiring review, and 2 indicates an invocation, I/O, data-format or tool error. CI should require exit 0 and consume output from that invocation. Source diagnostics include a stable code, file and one-based line and column. Success of check is only static acceptance.
+The original `node noi.mjs` entry point remains available for existing scripts. Append `--json` for a single machine-readable JSON object on stdout. Verification and comparison accept `--limit N` (1 through 1,000,000 per function). Exit 0 means the requested command succeeded, 1 indicates a source diagnostic, failed test, blocked proof or change requiring review, and 2 indicates an invocation, I/O, data-format or tool error. CI should require exit 0 and consume output from that invocation. Source diagnostics include a stable code, file and one-based line and column. Success of check is only static acceptance.
 
 ## Scope
 

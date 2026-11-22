@@ -7,7 +7,7 @@ import { compare } from './src/diff.mjs';
 import { build } from './src/backend.mjs';
 import { testVectors } from './src/vectors.mjs';
 
-const usage = 'noitak <check FILE | verify FILE | build FILE NEW_DIR | diff OLD NEW | test FILE VECTORS> [--json] [--limit N]';
+const usage = 'noitak <check FILE | verify FILE | build FILE NEW_DIR | diff OLD NEW | test FILE VECTORS> [--json] [--limit N] [--engine enumerate|symbolic]';
 const argv = process.argv.slice(2);
 const json = argv.includes('--json');
 function print(data) {
@@ -17,6 +17,7 @@ function print(data) {
     console.log(data.passed ? 'Policy passed' : 'Review required');
     for (const c of data.changes) {
       console.log(c.status, c.subject, c.field, JSON.stringify(c.before), '->', JSON.stringify(c.after));
+      if (c.reason) console.log('  Reason', c.reason);
       if (c.witness) console.log('  Witness', JSON.stringify(c.witness));
       if (c.equalOutcomes) console.log('  Equal outcomes on', c.equalOutcomes, 'tuples');
     }
@@ -37,8 +38,14 @@ async function main() {
   const [command, ...tokens] = argv;
   const positions = [];
   let limit = DEFAULT_LIMIT;
+  let engine = 'enumerate';
   for (let i = 0; i < tokens.length; i++) {
     if (tokens[i] === '--limit') limit = Number(tokens[++i]);
+    else if (tokens[i] === '--engine') {
+      engine = tokens[++i];
+      if (!['verify','diff','build'].includes(command) || !['symbolic','enumerate'].includes(engine))
+        throw new Error(usage);
+    }
     else if (tokens[i] === '--json') continue;
     else if (tokens[i].startsWith('--')) throw new Error(usage);
     else positions.push(tokens[i]);
@@ -52,10 +59,10 @@ async function main() {
   if (command === 'check') report = { module: unit.name, status: 'typechecked', passed: true };
   else if (command === 'test') report = testVectors(unit, JSON.parse(await readFile(other, 'utf8')));
   else {
-    report = verify(unit, bytes, limit);
+    report = verify(unit, bytes, limit, engine);
     if (command === 'diff') {
       const newer = await load(other);
-      report = compare(unit, newer.unit, report, verify(newer.unit, newer.bytes, limit));
+      report = compare(unit, newer.unit, report, verify(newer.unit, newer.bytes, limit, engine));
     } else if (command === 'build' && report.passed) report = await build(unit, report, other);
   }
   print(report);

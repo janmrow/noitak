@@ -7,7 +7,6 @@ const ts = t => t === 'byte' ? 'number' : t === 'bool' ? 'boolean' : 'Enum_' + t
 function declarations({ functions, enums }) {
   const lines = [
     "export type Result<T> = { ok: true; value: T } | { ok: false; code: 'ARGUMENT' | 'CAPABILITY' | 'ARITHMETIC' | 'PRECONDITION' | 'POSTCONDITION'; phase: 'boundary' | 'requires' | 'body' | 'ensures' };",
-
   ];
   for (const e of enums) {
     const members = e.variants.map(({tag, payload}) =>

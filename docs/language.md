@@ -1,9 +1,10 @@
-# Noitak 0.1
+# Noitak 0.2
 
 A source file holds one module. Forms are parenthesized, whitespace separates atoms, and a semicolon starts a line comment. Positions count UTF-16 code units from one. Declaration order inside a function is fixed.
 
 ```text
 (module ID MAJOR.MINOR.PATCH
+  (enum ID (TAG [SCALAR]) ...) ...
   (fn ID ((ID TYPE) ...) TYPE
     (reads ID ...)
     (requires EXPR)
@@ -11,7 +12,7 @@ A source file holds one module. Forms are parenthesized, whitespace separates at
     EXPR) ...)
 ```
 
-Every function is public. Names match `[a-z][a-z0-9_]*`. The value names true, false and result are reserved in declarations. Numbers and version components are unsigned decimal without redundant leading zeroes. Types are byte (integers 0 through 255) and bool. Parameter order defines the positional host interface. Each function has its own variable environment. Duplicate declarations and local shadowing are errors.
+Every function is public. Names match `[a-z][a-z0-9_]*`. The value names true, false and result are reserved in declarations. Numbers and version components are unsigned decimal without redundant leading zeroes. The scalar types are byte (integers 0 through 255) and bool. Parameter order defines the positional host interface. Each function has its own variable environment. Duplicate declarations and local shadowing are errors.
 
 | Expression | Typing and evaluation |
 | --- | --- |
@@ -44,7 +45,7 @@ A byte argument must be an integer-valued JS number in range. Negative zero beco
 | ARITHMETIC | requires, body or ensures | Checked addition or subtraction outside the byte range |
 | POSTCONDITION | ensures | False return predicate |
 
-Lists nest up to 128 levels. A module must have at least one function. Functions cannot call each other. Parameter tuples, the flag object and the result union are boundary structures. The expression language has scalar types only.
+Lists nest up to 128 levels. A module must have at least one function. Functions cannot call each other. Parameter tuples, the flag object and the result union are boundary structures.
 
 ## Finite tagged types
 

@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "scripts": { "test": "node --test tests/*.test.mjs", "demo": "node examples/demo.mjs" },
+  "scripts": { "test": "node --test tests/*.test.mjs", "test:symbolic": "node --test tests/symbolic/*.test.mjs", "demo": "node examples/demo.mjs" },
   "engines": { "node": ">=22" },
   "devDependencies": { "typescript": "5.9.3" }
 }
