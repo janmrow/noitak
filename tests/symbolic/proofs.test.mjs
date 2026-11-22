@@ -46,7 +46,7 @@ test('proof covers a domain beyond the maximum enumeration budget', () => {
   assert.equal(proof.domain,'16777216');
   assert.equal(proof.status,'proven');
 });
-test('symbolic diff retains the finite comparison limit', async () => {
+test('symbolic diff proves equal behavior beyond the finite comparison limit', async () => {
   const { compare } = await import('../../src/diff.mjs');
   const source = readFileSync('examples/reserve.noi','utf8');
   const revised = source.replace('(if (< remaining reserve) stock remaining)',
@@ -54,6 +54,6 @@ test('symbolic diff retains the finite comparison limit', async () => {
   const a = compile(source), b = compile(revised);
   const r = compare(a,b,verify(a,source,1,'symbolic'),verify(b,revised,1,'symbolic'));
   assert.ok(r.before.passed && r.after.passed);
-  assert.equal(r.passed,false);
-  assert.ok(r.changes.some(c=>c.field==='body' && c.status==='undetermined'));
+  assert.equal(r.passed,true);
+  assert.ok(r.changes.some(c=>c.field==='body' && c.solverAnswer==='unsat'));
 });

@@ -1,15 +1,16 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { invoke } from './runtime.mjs';
+import { argument, invoke, predicate } from './runtime.mjs';
 
 export const symbolicConfig = { method: 'z3-bv8-datatypes-v1', timeoutMsPerQuery: 3000, timeoutMsPerWorker: 10000 };
 const worker = fileURLToPath(new URL('./symbolic_worker.py', import.meta.url));
 
-export function solve(f, enums, spawn = spawnSync) {
-  const input = JSON.stringify({ function: f, enums, timeoutMs: symbolicConfig.timeoutMsPerQuery });
+const unknown = reason => ({ status: 'unverified', reason });
+
+function query(request, spawn) {
+  const input = JSON.stringify({ ...request, timeoutMs: symbolicConfig.timeoutMsPerQuery });
   const proc = spawn('python3', ['-I', worker], { input, encoding: 'utf8',
     timeout: symbolicConfig.timeoutMsPerWorker, killSignal: 'SIGKILL' });
-  const unknown = reason => ({ status: 'unverified', reason });
   if (proc.error || proc.status !== 0)
     return unknown(proc.error?.code ?? 'worker-failed');
   let answer;
@@ -18,6 +19,12 @@ export function solve(f, enums, spawn = spawnSync) {
   if (answer.status === 'unverified' && typeof answer.reason === 'string')
     return { ...unknown(answer.reason), solverVersion: answer.solverVersion };
   if (typeof answer.solverVersion !== 'string') return unknown('invalid-worker-response');
+  return answer;
+}
+
+export function solve(f, enums, spawn = spawnSync) {
+  const answer = query({ function: f, enums }, spawn);
+  if (answer.status === 'unverified') return answer;
   const { solverVersion } = answer;
   if (answer.status === 'proven' && answer.safety === 'unsat' && answer.admission === 'sat')
     return { status: 'proven', solverVersion, safety: 'unsat', admission: 'sat' };
@@ -32,4 +39,45 @@ export function solve(f, enums, spawn = spawnSync) {
     }
   }
   return unknown('invalid-worker-response');
+}
+
+function replay(old, next, field, input) {
+  if (!Array.isArray(input?.args) || !input.flags || typeof input.flags !== 'object') return;
+  const {args, flags} = input;
+  if (args.length !== old.params.length || args.some((v, i) => argument(old.params[i][1], v) === undefined) ||
+      old.reads.some(k => typeof flags[k] !== 'boolean')) return;
+  const grants = new Map(Object.entries(flags));
+  const oldPre = predicate(old, 'requires', args, grants);
+  const newPre = predicate(next, 'requires', args, grants);
+  if (oldPre !== true) return;
+  if (field === 'requires') {
+    if (newPre !== true) return { args, flags, before: oldPre, after: newPre };
+    return;
+  }
+  if (newPre !== true) return;
+  if (field === 'ensures') {
+    const result = argument(old.output, input.result);
+    if (result === undefined) return;
+    const before = predicate(old, field, args, grants, result);
+    const after = predicate(next, field, args, grants, result);
+    if (after === true && before !== true) return { args, flags, result, before, after };
+  } else {
+    const before = invoke(old, flags, args), after = invoke(next, flags, args);
+    if (before.ok && after.ok && JSON.stringify(before.value) !== JSON.stringify(after.value))
+      return { args, flags, before, after };
+  }
+}
+
+export function solveRelation(old, next, enums, field, spawn = spawnSync) {
+  const answer = query({ function: old, candidate: next, enums, relation: field }, spawn);
+  const {solverVersion} = answer;
+  if (answer.status === 'unverified') return { status: 'undetermined', reason: answer.reason, solverVersion };
+  if (answer.relation !== field) return { status: 'undetermined', reason: 'invalid-worker-response' };
+  if (answer.answer === 'unsat') return { status: 'compatible', solverVersion, solverAnswer: 'unsat' };
+  if (answer.answer === 'sat') {
+    const witness = replay(old, next, field, answer.input);
+    if (witness) return { status: 'risky', witness, solverVersion, solverAnswer: 'sat' };
+    return { status: 'undetermined', reason: 'model-replay-disagreement', solverVersion };
+  }
+  return { status: 'undetermined', reason: 'invalid-worker-response' };
 }

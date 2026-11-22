@@ -118,16 +118,29 @@ class Encoding:
         raise ValueError("Unknown model value")
 
 
-def verify(request):
+def setup(request):
     f = request["function"]
     encoding = Encoding(request["enums"])
     env = {name: encoding.variable(f"p{i}", typ) for i, (name, typ) in enumerate(f["params"])}
     flags = {name: encoding.variable(f"g{i}", "bool") for i, name in enumerate(f["reads"])}
+    solver = z3.Solver()
+    solver.set(timeout=request["timeoutMs"], random_seed=0)
+    return f, encoding, env, flags, solver
+
+
+def input_model(f, encoding, env, flags, model):
+    def decode(term, typ):
+        return encoding.decode(model.eval(term.value, model_completion=True), typ)
+
+    return {"args": [decode(env[k], typ) for k, typ in f["params"]],
+            "flags": {k: decode(term, "bool") for k, term in flags.items()}}
+
+
+def verify(request):
+    f, encoding, env, flags, solver = setup(request)
     pre = encoding.expression(f["requires"], env, flags)
     body = encoding.expression(f["body"], env, flags)
     post = encoding.expression(f["ensures"], {**env, "result": Term(body.value)}, flags)
-    solver = z3.Solver()
-    solver.set(timeout=request["timeoutMs"], random_seed=0)
     solver.push()
     solver.add(z3.Or(z3.Not(pre.safe), z3.And(pre.value,
                   z3.Not(z3.And(body.safe, post.safe, post.value)))))
@@ -135,14 +148,7 @@ def verify(request):
     if check == z3.unknown:
         return {"status": "unverified", "reason": solver.reason_unknown()}
     if check == z3.sat:
-        model = solver.model()
-
-        def witness(term, typ):
-            return encoding.decode(model.eval(term.value, model_completion=True), typ)
-
-        return {"status": "violated", "input": {
-            "args": [witness(env[k], typ) for k, typ in f["params"]],
-            "flags": {k: witness(term, "bool") for k, term in flags.items()}}}
+        return {"status": "violated", "input": input_model(f, encoding, env, flags, solver.model())}
     solver.pop()
     solver.add(pre.safe, pre.value)
     admitted = solver.check()
@@ -153,6 +159,46 @@ def verify(request):
     return {"status": "proven", "safety": "unsat", "admission": "sat"}
 
 
+def compare(request):
+    old, encoding, env, flags, solver = setup(request)
+    new = request["candidate"]
+    field = request["relation"]
+
+    def holds(function, field, scope):
+        term = encoding.expression(function[field], scope, flags)
+        return z3.And(term.safe, term.value)
+
+    admitted_old = holds(old, "requires", env)
+    admitted_new = holds(new, "requires", env)
+    solver.add(admitted_old)
+    if field == "requires":
+        solver.add(z3.Not(admitted_new))
+    elif field == "ensures":
+        result = encoding.variable("hypothetical", old["output"])
+        scope = {**env, "result": result}
+        solver.add(admitted_new, holds(new, field, scope), z3.Not(holds(old, field, scope)))
+    elif field == "body":
+        # Both complete functions have already been proven safe on admitted inputs.
+        a = encoding.expression(old[field], env, flags)
+        b = encoding.expression(new[field], env, flags)
+        solver.add(admitted_new, a.value != b.value)
+    else:
+        raise ValueError("Unknown relation")
+
+    check = solver.check()
+    if check == z3.unknown:
+        return {"status": "unverified", "reason": solver.reason_unknown()}
+    answer = {"relation": field, "answer": str(check)}
+    if check == z3.sat:
+        model = solver.model()
+        answer["input"] = input_model(old, encoding, env, flags, model)
+        if field == "ensures":
+            value = model.eval(result.value, model_completion=True)
+            answer["input"]["result"] = encoding.decode(value, old["output"])
+    return answer
+
+
 if __name__ == "__main__":
-    result = verify(json.load(sys.stdin))
+    request = json.load(sys.stdin)
+    result = compare(request) if "relation" in request else verify(request)
     print(json.dumps({**result, "solverVersion": z3.get_version_string()}))

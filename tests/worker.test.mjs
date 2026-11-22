@@ -13,3 +13,16 @@ for (const [label, response] of [
 ]) test('worker fails closed when '+label, () => {
   assert.equal(solve(f,[],()=>response).status,'unverified');
 });
+
+test('relational solver requires a matching query and a replayable typed witness', async () => {
+  const {solveRelation} = await import('../src/symbolic.mjs');
+  const answers = [
+    {relation:'ensures',answer:'sat',input:{args:[],flags:{},result:23}},
+    {relation:'ensures',answer:'sat',input:{args:[],flags:{},result:true}},
+    {relation:'body',answer:'unsat'}, {status:'unverified',reason:'timeout'}
+  ];
+  for (const answer of answers) {
+    const r = solveRelation(f,f,[],'ensures',()=>({status:0,stdout:JSON.stringify({...answer,solverVersion:'fixture'})}));
+    assert.equal(r.status,'undetermined');
+  }
+});

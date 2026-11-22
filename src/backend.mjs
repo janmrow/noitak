@@ -26,7 +26,7 @@ function declarations({ functions, enums }) {
 export async function build(unit, report, destination) {
   if (!report.passed) throw new Error('Required proof failed');
   const runtime = await readFile(new URL('./runtime.mjs', import.meta.url), 'utf8');
-  const core = runtime.replace('export { execute, invoke, predicate };', '');
+  const core = runtime.replace('export { argument, execute, invoke, predicate };', '');
   const functions = JSON.stringify(unit.functions.map(({loc, ...f}) => f));
   const js = core + '\nconst functions = ' + functions + ';\n' +
     'export const api = Object.freeze(Object.fromEntries(functions.map(f => [f.name, (flags, ...args) => invoke(f, flags, args)])));\n';

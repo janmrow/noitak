@@ -95,4 +95,4 @@ function predicate(f, field, args, flags, result) {
   }
 }
 
-export { execute, invoke, predicate };
+export { argument, execute, invoke, predicate };
