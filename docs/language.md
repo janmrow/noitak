@@ -1,6 +1,6 @@
 # Noitak 0.3
 
-A source file holds one module. Forms are parenthesized, whitespace separates atoms, and a semicolon starts a line comment. Positions count UTF-16 code units from one. Declaration order inside a function is fixed.
+A source file holds one module. Forms are parenthesized, whitespace separates atoms, and a semicolon starts a line comment. LF, CRLF and CR each end one line. Positions count UTF-16 code units from one. Declaration order inside a function is fixed.
 
 ```text
 (module ID MAJOR.MINOR.PATCH

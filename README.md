@@ -130,3 +130,7 @@ The proof covers execution on the declared finite domains and assumes the compil
 - [Implementation architecture](docs/architecture.md)
 - [Verification-first design](docs/philosophy.md)
 - [Potential next experiments](docs/roadmap.md)
+
+## License
+
+Noitak is licensed under the [Apache License, Version 2.0](LICENSE).

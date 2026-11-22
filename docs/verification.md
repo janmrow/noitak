@@ -20,6 +20,8 @@ Each query has a 3-second timeout and the parent gives each worker 10 seconds in
 
 ## Reading a report
 
+On POSIX, build and gate claim the fresh destination with an exclusive directory creation after staging all files. The destination can briefly appear empty before the complete bundle is renamed into place. A competing creator that claims the name first keeps its directory. Consume the bundle after the command exits successfully. An interruption during publication can leave an empty reservation behind. Use a fresh destination to retry.
+
 Function verification report schema 2 records source SHA-256, module identity and version, tool version, proof method and configuration, per-function reads and the exact domain cardinality. Each function check identifies the obligation, source location, and outcome. Enumeration supplies examined and admitted counts. The symbolic engine records the Z3 version when available. Builds also hash the ESM and declaration bytes and publish the files together. Digests are unsigned.
 
 | Status | Meaning |

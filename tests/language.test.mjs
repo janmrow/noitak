@@ -42,6 +42,14 @@ test('comments, immutable locals and lazy branches', () => {
   assert.equal(invoke(f, {}, [255]).value, 0);
   assert.equal(invoke(f, {}, [2]).value, 3);
 });
+test('LF, CRLF and CR end comments and advance diagnostics by one line', () => {
+  for (const newline of ['\n', '\r\n', '\r']) {
+    const program = ['(module sample 1.0.0', '; comment', ' (fn f () byte (reads)', '  (requires true) (ensures true)', '  7))'].join(newline);
+    assert.equal(compile(program).functions[0].body, 7);
+    assert.throws(() => compile(program.replace('7))', '256))')), e =>
+      e.detail?.code === 'E_RANGE' && e.detail.line === 5 && e.detail.column === 3);
+  }
+});
 test('requires filters input and proof counts it', () => {
   const c = check('(+ x 1)', {pre:'(< x 255)', post:'(< x result)'});
   assert.deepEqual([c.status,c.examined,c.admitted], ['proven',256,255]);

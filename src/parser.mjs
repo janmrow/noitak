@@ -14,9 +14,9 @@ export function parse(source) {
   let line = 1, column = 1;
   const root = { items: [], loc: { line, column } };
   const stack = [root];
-  for (const [token] of source.matchAll(/;[^\n]*|\s+|[()]|[^\s();]+/gu)) {
+  for (const [token] of source.matchAll(/;[^\r\n]*|\s+|[()]|[^\s();]+/gu)) {
     const node = { loc: { line, column } };
-    const lines = token.split('\n');
+    const lines = token.split(/\r\n|[\r\n]/u);
     line += lines.length - 1;
     column = lines.length === 1 ? column + token.length : lines.at(-1).length + 1;
     if (/^[;\s]/u.test(token)) continue;

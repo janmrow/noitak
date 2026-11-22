@@ -7,6 +7,18 @@ const worker = fileURLToPath(new URL('./symbolic_worker.py', import.meta.url));
 
 const unknown = reason => ({ status: 'unverified', reason });
 
+// Each worker reply describes exactly one outcome of the requested operation.
+function hasFields(record, ...fields) {
+  return record !== null && typeof record === 'object' && !Array.isArray(record) &&
+    Object.keys(record).length === fields.length && fields.every(key => Object.hasOwn(record, key));
+}
+
+function validModel(input, field) {
+  const fields = field === 'ensures' ? ['args', 'flags', 'result'] : ['args', 'flags'];
+  return hasFields(input, ...fields) && Array.isArray(input.args) &&
+    input.flags !== null && typeof input.flags === 'object' && !Array.isArray(input.flags);
+}
+
 function query(request, spawn) {
   const input = JSON.stringify({ ...request, timeoutMs: symbolicConfig.timeoutMsPerQuery });
   const proc = spawn('python3', ['-I', worker], { input, encoding: 'utf8',
@@ -16,10 +28,13 @@ function query(request, spawn) {
   let answer;
   try { answer = JSON.parse(proc.stdout); } catch { return unknown('invalid-worker-response'); }
   if (!answer || typeof answer !== 'object') return unknown('invalid-worker-response');
-  if (answer.status === 'unverified')
-    return { ...unknown(typeof answer.reason === 'string' ? answer.reason : 'invalid-worker-response'),
-      solverVersion: answer.solverVersion };
-  if (typeof answer.solverVersion !== 'string') return unknown('invalid-worker-response');
+  if (answer.status === 'unverified' && hasFields(answer, 'status', 'reason') &&
+      typeof answer.reason === 'string') return answer;
+  if (typeof answer.solverVersion !== 'string' || !answer.solverVersion.trim())
+    return unknown('invalid-worker-response');
+  if (answer.status === 'unverified' &&
+      !(hasFields(answer, 'status', 'reason', 'solverVersion') && typeof answer.reason === 'string'))
+    return unknown('invalid-worker-response');
   return answer;
 }
 
@@ -27,11 +42,14 @@ export function solve(f, enums, spawn = spawnSync) {
   const answer = query({ function: f, enums }, spawn);
   if (answer.status === 'unverified') return answer;
   const { solverVersion } = answer;
-  if (answer.status === 'proven' && answer.safety === 'unsat' && answer.admission === 'sat')
+  if (answer.status === 'proven' && hasFields(answer, 'status', 'solverVersion', 'safety', 'admission') &&
+      answer.safety === 'unsat' && answer.admission === 'sat')
     return { status: 'proven', solverVersion, safety: 'unsat', admission: 'sat' };
   if (answer.status === 'violated') {
-    if (answer.reason === 'empty-admission-domain') return { status: 'violated', reason: answer.reason, solverVersion };
-    if (Array.isArray(answer.input?.args)) {
+    if (hasFields(answer, 'status', 'solverVersion', 'reason', 'safety', 'admission') &&
+        answer.reason === 'empty-admission-domain' && answer.safety === 'unsat' && answer.admission === 'unsat')
+      return answer;
+    if (hasFields(answer, 'status', 'solverVersion', 'input') && validModel(answer.input)) {
       const { args, flags } = answer.input;
       const outcome = invoke(f, flags, args);
       if (['POSTCONDITION','ARITHMETIC'].includes(outcome.code))
@@ -43,7 +61,6 @@ export function solve(f, enums, spawn = spawnSync) {
 }
 
 function replay(old, next, field, input) {
-  if (!Array.isArray(input?.args) || !input.flags || typeof input.flags !== 'object') return;
   if (input.args.length !== old.params.length) return;
   const args = old.params.map(([,type], i) => argument(type, input.args[i]));
   if (args.includes(undefined) || old.reads.some(k => typeof input.flags[k] !== 'boolean')) return;
@@ -75,8 +92,10 @@ export function solveRelation(old, next, enums, field, spawn = spawnSync) {
   const {solverVersion} = answer;
   if (answer.status === 'unverified') return { status: 'undetermined', reason: answer.reason, solverVersion };
   if (answer.relation !== field) return { status: 'undetermined', reason: 'invalid-worker-response' };
-  if (answer.answer === 'unsat') return { status: 'compatible', solverVersion, solverAnswer: 'unsat' };
-  if (answer.answer === 'sat') {
+  if (answer.answer === 'unsat' && hasFields(answer, 'relation', 'answer', 'solverVersion'))
+    return { status: 'compatible', solverVersion, solverAnswer: 'unsat' };
+  if (answer.answer === 'sat' && hasFields(answer, 'relation', 'answer', 'solverVersion', 'input') &&
+      validModel(answer.input, field)) {
     const witness = replay(old, next, field, answer.input);
     if (witness) return { status: 'risky', witness, solverVersion, solverAnswer: 'sat' };
     return { status: 'undetermined', reason: 'model-replay-disagreement', solverVersion };

@@ -29,7 +29,11 @@ async function load(path) {
   }
 }
 async function main() {
-  if (argv[0] === '--help') { console.log(usage); return; }
+  if (argv[0] === '--help') {
+    if (json) print({ usage });
+    else console.log(usage);
+    return;
+  }
   const [command, ...tokens] = argv;
   const positions = [];
   let limit = DEFAULT_LIMIT;

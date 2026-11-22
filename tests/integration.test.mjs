@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
+import { publishDirectory } from '../src/backend.mjs';
 
 const good = 'examples/quota.noi', bad = 'examples/broken.noi', changed = 'examples/maintenance.noi';
 const sha = path => createHash('sha256').update(readFileSync(path)).digest('hex');
@@ -38,6 +39,26 @@ test('failed proof and budget refusal publish no artifacts', t => {
     assert.equal(cli(['build',path,target],1).passed,false);
     assert.equal(existsSync(target),false);
   }
+});
+test('publication preserves an empty directory claimed after staging', async t => {
+  const parent = temporary(t);
+  const staged = join(parent, 'staged'), target = join(parent, 'output');
+  mkdirSync(staged);
+  writeFileSync(join(staged, 'module.mjs'), 'export const api = {};');
+  mkdirSync(target);
+  await assert.rejects(publishDirectory(staged, target));
+  assert.deepEqual(readdirSync(target), []);
+  assert.deepEqual(readdirSync(staged), ['module.mjs']);
+});
+test('a failed directory rename releases the destination for retry', async t => {
+  const parent = temporary(t);
+  const staged = join(parent, 'staged'), target = join(parent, 'output');
+  await assert.rejects(publishDirectory(staged, target));
+  assert.equal(existsSync(target), false);
+  mkdirSync(staged);
+  writeFileSync(join(staged, 'report.json'), '{}');
+  await publishDirectory(staged, target);
+  assert.deepEqual(readdirSync(target), ['report.json']);
 });
 test('emitted module agrees with independent saturating-subtraction oracle on all pairs', async t => {
   const dir = join(temporary(t),'dist');
@@ -79,6 +100,11 @@ test('CLI distinguishes source diagnostics and invocation errors', t => {
   const d = cli(['check',f],1).diagnostic;
   assert.deepEqual([d.code,d.file,d.line,d.column],['E_PARSE',f,2,2]);
   assert.equal(cli(['verify',good,'--limit','0'],2).diagnostic.code,'E_TOOL');
+});
+test('CLI help exposes the same usage as text and JSON', () => {
+  const usage = run(['noitak.mjs', '--help']).trim();
+  assert.match(usage, /^noitak </);
+  assert.deepEqual(cli(['--help']), {usage});
 });
 test('strict TypeScript application imports declarations and runs generated module', () => {
   assert.match(run(['examples/demo.mjs']),/TypeScript host returned 5/);

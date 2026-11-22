@@ -155,7 +155,7 @@ def verify(request):
     if admitted == z3.unknown:
         return {"status": "unverified", "reason": solver.reason_unknown()}
     if admitted == z3.unsat:
-        return {"status": "violated", "reason": "empty-admission-domain"}
+        return {"status": "violated", "reason": "empty-admission-domain", "safety": "unsat", "admission": "unsat"}
     return {"status": "proven", "safety": "unsat", "admission": "sat"}
 
 

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { solve } from '../src/symbolic.mjs';
+import { solve, solveRelation } from '../src/symbolic.mjs';
 import { compile } from '../src/frontend.mjs';
 
 const f = compile('(module m 1.0.0 (fn f () bool (reads) (requires true) (ensures true) true))').functions[0];
@@ -14,8 +14,32 @@ for (const [label, response] of [
   assert.equal(solve(f,[],()=>response).status,'unverified');
 });
 
-test('relational solver requires a matching query and a replayable typed witness', async () => {
-  const {solveRelation} = await import('../src/symbolic.mjs');
+function workerReply(fields) {
+  return () => ({ status: 0, stdout: JSON.stringify({solverVersion: 'fixture', ...fields}) });
+}
+
+test('a mixed reply cannot establish equal returns for different bodies', () => {
+  const candidate = {...f, body: false};
+  const reply = {relation: 'body', answer: 'unsat'};
+  for (const extra of [{status: 'violated'}, {input: {args: [], flags: {}}}]) {
+    const result = solveRelation(f, candidate, [], 'body', workerReply({...reply, ...extra}));
+    assert.equal(result.status, 'undetermined');
+    assert.equal(result.reason, 'invalid-worker-response');
+  }
+});
+
+test('a proof requires consistent safety and admission evidence', () => {
+  for (const reply of [
+    {status: 'violated', reason: 'empty-admission-domain', safety: 'unsat', admission: 'sat'},
+    {status: 'proven', safety: 'unsat', admission: 'sat', input: {args: [], flags: {}}}
+  ]) {
+    const result = solve(f, [], workerReply(reply));
+    assert.equal(result.status, 'unverified');
+    assert.equal(result.reason, 'invalid-worker-response');
+  }
+});
+
+test('relational solver requires a matching query and a replayable typed witness', () => {
   const answers = [
     {relation:'ensures',answer:'sat',input:{args:[],flags:{},result:23}},
     {relation:'ensures',answer:'sat',input:{args:[],flags:{},result:true}},
@@ -26,8 +50,7 @@ test('relational solver requires a matching query and a replayable typed witness
     assert.equal(r.status,'undetermined');
   }
 });
-test('relational replay treats host extra fields like the compiled boundary', async () => {
-  const {solveRelation} = await import('../src/symbolic.mjs');
+test('relational replay treats host extra fields like the compiled boundary', () => {
   const old = compile(`(module m 1.0.0 (enum e (absent))
     (fn f ((x e)) bool (reads) (requires true) (ensures (= x (tag e absent))) true))`).functions[0];
   const fake = {relation:'ensures',answer:'sat',solverVersion:'fixture',

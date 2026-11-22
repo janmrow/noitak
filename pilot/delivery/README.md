@@ -8,4 +8,6 @@ Give a participant the requirement and the numbered text reports. For each repor
 
 ## Run a session
 
+In each numbered report, `./artifact` refers to the bundle beside that report. Keep the case directory together when moving or downloading a session.
+
 From the repository root, activate the Python environment containing the pinned Z3 version, run npm ci and then run `npm run pilot -- build/session-1`. Each fresh session directory holds a worksheet, five numbered reports in text and JSON, and the accepted JS bundle with its compiled TypeScript caller. The runner refuses to overwrite a previous session. Keep participant responses separate from the fixed answer key. The CI workflow executes the same command and retains the reports with the run.

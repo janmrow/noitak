@@ -14,8 +14,8 @@ const cases = JSON.parse(readFileSync(join(here, 'cases.json')));
 const output = resolve(process.argv[2] ?? 'build/pilot');
 const digest = path => createHash('sha256').update(readFileSync(path)).digest('hex');
 
-function run(args, status = 0) {
-  const p = spawnSync(process.execPath, args, { encoding: 'utf8', cwd: root });
+function run(args, status = 0, cwd = root) {
+  const p = spawnSync(process.execPath, args, { encoding: 'utf8', cwd });
   assert.equal(p.status, status, p.error?.message ?? (p.stdout + p.stderr));
   return p.stdout;
 }
@@ -31,10 +31,10 @@ for (const c of cases) {
   mkdirSync(dir);
   const artifact = join(dir, 'artifact');
   const candidate = join(here, c.candidate);
-  const args = ['noitak.mjs', 'gate', baseline, candidate, artifact, '--json', '--engine', c.engine];
+  const args = [join(root, 'noitak.mjs'), 'gate', baseline, candidate, './artifact', '--json', '--engine', c.engine];
   if (c.limit) args.push('--limit', String(c.limit));
   const accept = c.decision === 'accept';
-  const review = JSON.parse(run(args, accept ? 0 : 1));
+  const review = JSON.parse(run(args, accept ? 0 : 1, dir));
   writeFileSync(join(dir, 'review.json'), JSON.stringify(review, null, 2) + '\n');
   writeFileSync(join(dir, 'review.txt'), formatReview(review) + '\n');
   assert.equal(review.passed, accept);
@@ -49,7 +49,7 @@ for (const c of cases) {
     for (const file of ['module.mjs','module.d.mts','review.json'])
       assert.equal(digest(join(artifact,file)), manifest.artifacts[file]);
     const {artifact: published, ...compared} = review;
-    assert.equal(published, artifact);
+    assert.equal(published, './artifact');
     assert.deepEqual(JSON.parse(readFileSync(join(artifact,'review.json'))), compared);
     copyFileSync(join(here,'host.mts'), join(dir,'host.mts'));
     run(['node_modules/typescript/bin/tsc','--strict','--module','nodenext',join(dir,'host.mts')]);

@@ -1,4 +1,4 @@
-import { readFile, mkdir, mkdtemp, writeFile, rename, rm, lstat } from 'node:fs/promises';
+import { readFile, mkdir, mkdtemp, writeFile, rename, rm, rmdir, lstat } from 'node:fs/promises';
 import { dirname, resolve, join } from 'node:path';
 import { hash } from './verify.mjs';
 
@@ -21,6 +21,19 @@ function declarations({ functions, enums }) {
       ') => Result<' + ts(f.output) + '>;');
   }
   return [...lines, '};', ''].join('\n');
+}
+
+export async function publishDirectory(staged, target) {
+  // Windows directory renames already fail when the destination directory exists.
+  if (process.platform === 'win32') return rename(staged, target);
+  // POSIX rename can replace an empty directory. Claim the name before renaming.
+  await mkdir(target, { mode: 0o700 });
+  try {
+    await rename(staged, target);
+  } catch (error) {
+    await rmdir(target);
+    throw error;
+  }
 }
 
 export async function build(unit, report, destination, review) {
@@ -50,7 +63,7 @@ export async function build(unit, report, destination, review) {
   try {
     for (const [file, data] of files)
       await writeFile(join(temp, file), data);
-    await rename(temp, target);
+    await publishDirectory(temp, target);
   } finally { await rm(temp, { recursive: true, force: true }); }
   return manifest;
 }
