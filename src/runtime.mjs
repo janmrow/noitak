@@ -11,7 +11,17 @@ function evaluate(expr, env, flags) {
     case 'not': return !run(a);
     case 'and': return run(a) && run(b);
     case 'or': return run(a) || run(b);
-    case '=': return run(a) === run(b);
+    case '=': {
+      const left = run(a), right = run(b);
+      return typeof left === 'object' ? left.tag === right.tag && left.value === right.value : left === right;
+    }
+    case 'tag': return expr.length === 4 ? { tag: b, value: run(c) } : { tag: b };
+    case 'match': {
+      const subject = run(a);
+      const [, binder, branch] = b.find(([tag]) => tag === subject.tag);
+      const scope = binder ? new Map(env).set(binder, subject.value) : env;
+      return evaluate(branch, scope, flags);
+    }
     case '<': return run(a) < run(b);
     case '<=': return run(a) <= run(b);
     case '+':
@@ -43,11 +53,24 @@ function execute(f, args, flags) {
   }
 }
 
+function argument(type, value) {
+  if (type === 'bool') return typeof value === 'boolean' ? value : undefined;
+  if (type === 'byte') return Number.isInteger(value) && value >= 0 && value <= 255 ? value + 0 : undefined;
+  if (value === null || typeof value !== 'object') return undefined;
+  const tag = Object.getOwnPropertyDescriptor(value, 'tag')?.value;
+  const variant = type.variants.find(v => v.tag === tag);
+  if (!variant) return undefined;
+  if (!variant.payload) return { tag };
+  const payload = argument(variant.payload, Object.getOwnPropertyDescriptor(value, 'value')?.value);
+  return payload === undefined ? undefined : { tag, value: payload };
+}
+
 function invoke(f, flags, args) {
-  if (args.length !== f.params.length || !f.params.every(([, t], i) =>
-    t === 'bool' ? typeof args[i] === 'boolean' :
-    Number.isInteger(args[i]) && args[i] >= 0 && args[i] <= 255))
-    return error('ARGUMENT', 'boundary');
+  if (args.length !== f.params.length) return error('ARGUMENT', 'boundary');
+  let values;
+  try { values = args.map((v, i) => argument(f.params[i][1], v)); }
+  catch { return error('ARGUMENT', 'boundary'); }
+  if (values.includes(undefined)) return error('ARGUMENT', 'boundary');
   const snapshot = new Map();
   if (!flags || typeof flags !== 'object') return error('CAPABILITY', 'boundary');
   try {
@@ -59,8 +82,7 @@ function invoke(f, flags, args) {
   } catch {
     return error('CAPABILITY', 'boundary');
   }
-  // Canonicalize JavaScript negative zero at the byte boundary.
-  return execute(f, args.map(v => Object.is(v, -0) ? 0 : v), snapshot);
+  return execute(f, values, snapshot);
 }
 
 function predicate(f, field, args, flags, result) {

@@ -20,6 +20,12 @@ export function compare(oldUnit, newUnit, before, after) {
     changes.push({ subject, field, status, before: oldValue, after: newValue });
   if (oldUnit.name !== newUnit.name)
     record('module', 'identity', 'policy-violation', oldUnit.name, newUnit.name);
+  const oldTypes = new Map(oldUnit.enums.map(e => [e.name, e]));
+  const newTypes = new Map(newUnit.enums.map(e => [e.name, e]));
+  for (const name of new Set([...oldTypes.keys(), ...newTypes.keys()])) {
+    const old = oldTypes.get(name), next = newTypes.get(name);
+    if (!equal(old, next)) record(name, 'enum', old ? 'risky' : 'compatible', old ?? null, next ?? null);
+  }
   const newer = new Map(newUnit.functions.map(f => [f.name, f]));
   const coverage = report => new Map(report.checks.map(c => [c.function, { property: c.property, status: c.status, domain: c.domain }]));
   const previous = coverage(before), current = coverage(after);

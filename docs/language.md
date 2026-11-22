@@ -45,3 +45,11 @@ A byte argument must be an integer-valued JS number in range. Negative zero beco
 | POSTCONDITION | ensures | False return predicate |
 
 Lists nest up to 128 levels. A module must have at least one function. Functions cannot call each other. Parameter tuples, the flag object and the result union are boundary structures. The expression language has scalar types only.
+
+## Finite tagged types
+
+A module may declare `(enum name (tag) (other byte) ...)` anywhere among its functions. Each distinct variant has zero or one scalar payload. Enum names are nominal and occupy a separate type namespace. All declarations generate public TypeScript aliases named Enum_name.
+
+Construct a value with `(tag name tag)` or `(tag name other expr)`. For subject type T, `(match subject (tag expr) (other x expr) ...)` must cover each variant of T exactly once. A payload binder is local to its arm and follows the ordinary no-shadowing rule. Arm result types must agree. Evaluate the subject once and evaluate only the selected arm. Equality compares tag and payload within a single nominal type.
+
+The domain size is the sum of the variant sizes. A nullary variant contributes one. Enumeration uses lexical tag order, then scalar payload order. At the JS boundary, values use a discriminated union such as `{tag:"pending"} | {tag:"received",value:number}`. Required fields must be own data properties. The boundary copies these fields, validates the payload and discards extra fields. See examples/delivery.noi for an acknowledgment that preserves an already recorded sequence number.

@@ -1,5 +1,19 @@
-export function cardinality(type) { return type === 'byte' ? 256 : 2; }
-export function valueAt(type, digit) { return type === 'bool' ? Boolean(digit) : digit; }
+export function cardinality(type) {
+  if (type === 'byte') return 256;
+  if (type === 'bool') return 2;
+  return type.variants.reduce((sum, v) => sum + (v.payload ? cardinality(v.payload) : 1), 0);
+}
+
+export function valueAt(type, digit) {
+  if (type === 'byte') return digit;
+  if (type === 'bool') return Boolean(digit);
+  for (const {tag, payload} of type.variants) {
+    const size = payload ? cardinality(payload) : 1;
+    if (digit < size) return payload ? { tag, value: valueAt(payload, digit) } : { tag };
+    digit -= size;
+  }
+  throw new RangeError('Invalid domain index');
+}
 
 // The first parameter varies fastest, followed by subsequent parameters and grants.
 export function domainOf(f) {
