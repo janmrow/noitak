@@ -4,6 +4,7 @@ import { load } from './src/loader.mjs';
 import { Diagnostic } from './src/parser.mjs';
 import { verify, DEFAULT_LIMIT, VERSION } from './src/verify.mjs';
 import { compare } from './src/diff.mjs';
+import { ArtifactMismatch } from './src/artifact-check.mjs';
 import { build } from './src/backend.mjs';
 import { testVectors } from './src/vectors.mjs';
 
@@ -59,8 +60,8 @@ async function main() {
       const candidate = verify(newer.unit, newer.bytes, limit, engine);
       report = compare(unit, newer.unit, report, candidate);
       if (command === 'gate' && report.passed) {
-        await build(newer.unit, candidate, positions[2], report);
-        report = { ...report, artifact: positions[2] };
+        const manifest = await build(newer.unit, candidate, positions[2], report);
+        report = { ...report, artifact: positions[2], artifactValidation: manifest.artifactValidation };
       }
     } else if (command === 'build' && report.passed) report = await build(unit, report, other);
   }
@@ -68,6 +69,6 @@ async function main() {
   if (!report.passed) process.exitCode = 1;
 }
 try { await main(); } catch (e) {
-  print({ diagnostic: e instanceof Diagnostic ? e.detail : { code: 'E_TOOL', message: e.message } });
+  print({ diagnostic: e instanceof Diagnostic || e instanceof ArtifactMismatch ? e.detail : { code: 'E_TOOL', message: e.message } });
   process.exitCode = e instanceof Diagnostic ? 1 : 2;
 }

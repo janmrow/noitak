@@ -89,7 +89,10 @@ test('reducer checks empty admission and attributes invariant and step faults to
 
 test('seeded composed u32 expressions preserve intermediate overflow, scoping and branch selection',async t=>{
   let seed = 71237;
-  const draw = n => (seed = (Math.imul(seed,1664525)+1013904223)>>>0) % n;
+  function draw(n) {
+    seed = (Math.imul(seed,1664525)+1013904223)>>>0;
+    return Math.floor(seed * n / 2**32);
+  }
   function expr(depth) {
     if (!depth) return ['x','y','0u32','4294967295u32','(widen z)'][draw(5)];
     const a = expr(depth-1), b = expr(depth-1);

@@ -45,6 +45,10 @@ export function formatReview(report) {
     if (c.reason) lines.push('Reason: ' + c.reason);
   }
   if (!report.changes.length) lines.push('No findings under the change policy.');
+  if (report.artifactValidation) {
+    const calls = report.artifactValidation.checks.reduce((sum,c)=>sum+c.cases,0);
+    lines.push('Emitted module matched the reference on ' + calls + ' tested host calls.');
+  }
   if (report.artifact) lines.push('', 'Published verified artifact: ' + report.artifact);
   return lines.join('\n');
 }

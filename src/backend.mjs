@@ -1,5 +1,6 @@
 import { mkdir, mkdtemp, writeFile, rename, rm, rmdir, lstat } from 'node:fs/promises';
 import { dirname, resolve, join } from 'node:path';
+import { checkArtifact } from './artifact-check.mjs';
 import { emitModule } from './emitter.mjs';
 import { hash } from './verify.mjs';
 
@@ -59,19 +60,18 @@ export async function build(unit, report, destination, review) {
   const js = await emitModule(unit);
   const types = declarations(unit);
   const files = new Map([['module.mjs', js], ['module.d.mts', types]]);
-  if (review) {
-    if (!review.passed || review.after.sourceSha256 !== report.sourceSha256)
-      throw new Error('Review does not authorize this source');
-    files.set('review.json', JSON.stringify(review, null, 2) + '\n');
-  }
-  const artifacts = Object.fromEntries([...files].map(([name, content]) => [name, hash(content)]));
-  const manifest = { ...report, artifacts };
-  files.set('report.json', JSON.stringify(manifest, null, 2) + '\n');
+  if (review && (!review.passed || review.after.sourceSha256 !== report.sourceSha256))
+    throw new Error('Review does not authorize this source');
   const target = resolve(destination);
   try {
     await lstat(target);
     throw new Error('Build destination already exists: ' + target);
   } catch (e) { if (e.code !== 'ENOENT') throw e; }
+  const artifactValidation = await checkArtifact(unit, js);
+  if (review) files.set('review.json', JSON.stringify({...review, artifactValidation}, null, 2) + '\n');
+  const artifacts = Object.fromEntries([...files].map(([name, content]) => [name, hash(content)]));
+  const manifest = { ...report, backend: 'checked-js-v1', artifacts, artifactValidation };
+  files.set('report.json', JSON.stringify(manifest, null, 2) + '\n');
   await mkdir(dirname(target), { recursive: true });
   const temp = await mkdtemp(join(dirname(target), '.noitak-'));
   try {

@@ -164,6 +164,10 @@ test('gate builds from the compared revision and keeps an earlier bundle intact 
   const approved = cli(['gate',baseline,source,out]);
   const manifest = JSON.parse(readFileSync(join(out,'report.json')));
   assert.equal(approved.after.sourceSha256,manifest.sourceSha256);
+  assert.deepEqual(approved.artifactValidation,manifest.artifactValidation);
+  const {artifact, ...decision} = approved;
+  assert.equal(artifact,out);
+  assert.deepEqual(JSON.parse(readFileSync(join(out,'review.json'))),decision);
   assert.equal(manifest.artifacts['review.json'],sha(join(out,'review.json')));
   const earlier = sha(join(out,'module.mjs'));
   writeFileSync(source,readFileSync('examples/refinement/weakened.noi'));

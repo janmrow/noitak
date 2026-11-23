@@ -54,18 +54,19 @@ export function domainOf(f) {
   const types = [...f.params.map(([, t]) => t), ...f.reads.map(() => 'bool')];
   const sizes = types.map(cardinality);
   const total = sizes.reduce((n, size) => n * size, 1n);
-  function* cases() {
-    for (let i = 0n; i < total; i++) {
-      let index = i;
-      const values = sizes.map((size, j) => {
-        const value = valueAt(types[j], index % size);
-        index /= size;
-        return value;
-      });
-      const args = values.slice(0, f.params.length);
-      const flags = new Map(f.reads.map((key, j) => [key, values[f.params.length + j]]));
-      yield { args, flags };
-    }
+  function at(index) {
+    if (index < 0n || index >= total) throw new RangeError('Invalid assignment index');
+    const values = sizes.map((size, j) => {
+      const value = valueAt(types[j], index % size);
+      index /= size;
+      return value;
+    });
+    const args = values.slice(0, f.params.length);
+    const flags = new Map(f.reads.map((key, j) => [key, values[f.params.length + j]]));
+    return {args, flags};
   }
-  return { total, cases };
+  function* cases() {
+    for (let i = 0n; i < total; i++) yield at(i);
+  }
+  return { total, cases, at };
 }
