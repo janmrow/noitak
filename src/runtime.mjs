@@ -22,14 +22,31 @@ function evaluate(expr, env, flags, graph) {
     case '=': return equalValue(run(a), run(b));
     case 'make': return Object.fromEntries(b.map(([key, value]) => [key, run(value)]));
     case 'get': return run(a)[b];
+    case 'items': return b.map(run);
+    case 'length': return run(a).length;
+    case 'fold': {
+      const values = run(a);
+      let acc = run(b);
+      const scope = new Map(env);
+      for (let i = 0; i < values.length; i++) {
+        scope.set(c[0], acc).set(c[1], values[i]).set(c[2], i);
+        acc = evaluate(expr[4], scope, flags, graph);
+      }
+      return acc;
+    }
+    case 'attempt':
     case 'apply': {
       const [names, pre, body, post] = graph[a];
+      const index = op === 'attempt' ? run(expr[4]) : undefined;
       const args = b.map(run);
       const frame = new Map(names.map((name, i) => [name, args[i]]));
-      if (!evaluate(pre, frame, flags, graph)) throw new CallFault('CALL_PRECONDITION');
+      if (!evaluate(pre, frame, flags, graph)) {
+        if (op === 'attempt') return {tag:'rejected', value:index};
+        throw new CallFault('CALL_PRECONDITION');
+      }
       const value = evaluate(body, frame, flags, graph);
       if (!evaluate(post, frame.set('result', value), flags, graph)) throw new CallFault('CALL_POSTCONDITION');
-      return value;
+      return op === 'attempt' ? {tag:'committed',value} : value;
     }
     case 'call': {
       const args = c.map(run);
@@ -85,6 +102,18 @@ function argument(type, value) {
   if (type === 'bool') return typeof value === 'boolean' ? value : undefined;
   if (type === 'byte') return Number.isInteger(value) && value >= 0 && value <= 255 ? value + 0 : undefined;
   if (value === null || typeof value !== 'object') return undefined;
+  if (type.element) {
+    if (!Array.isArray(value)) return undefined;
+    const length = Object.getOwnPropertyDescriptor(value, 'length')?.value;
+    if (!Number.isInteger(length) || length < 0 || length > type.capacity) return undefined;
+    const copy = [];
+    for (let i = 0; i < length; i++) {
+      const item = argument(type.element, Object.getOwnPropertyDescriptor(value, i)?.value);
+      if (item === undefined) return undefined;
+      copy.push(item);
+    }
+    return copy;
+  }
   if (type.fields) {
     const copy = {};
     for (const [key, fieldType] of type.fields) {

@@ -22,24 +22,50 @@ class Encoding:
         self.variants = {}
         self.summaries = {}
         self.record_fields = {}
-        # Records may contain enums from either revision.
-        for index, enum in enumerate(t for t in types if "variants" in t):
-            datatype = z3.Datatype(f"E{index}")
-            for i, variant in enumerate(enum["variants"]):
-                payload = variant["payload"]
-                fields = [(f"field{index}_{i}", self.sorts[payload])] if payload else []
-                datatype.declare(f"tag{index}_{i}", *fields)
-            sort = datatype.create()
-            self.sorts[enum["name"]] = sort
-            self.variants[sort.name()] = {v["tag"]: i for i, v in enumerate(enum["variants"])}
+        self.capacities = {}
+        for typ in types:
+            self.declare(typ)
 
-        for index, record in enumerate(t for t in types if "fields" in t):
-            datatype = z3.Datatype(f"R{index}")
-            fields = [(f"r{index}_{i}", self.sort(typ)) for i, (_, typ) in enumerate(record["fields"])]
+    def declare(self, typ):
+        if isinstance(typ, str) or typ["name"] in self.sorts:
+            return
+        if "element" in typ:
+            self.declare(typ["element"])
+        elif "fields" in typ:
+            for _, field in typ["fields"]:
+                self.declare(field)
+        else:
+            for variant in typ["variants"]:
+                if variant["payload"]:
+                    self.declare(variant["payload"])
+        index = len(self.sorts)
+        datatype = z3.Datatype(f"D{index}")
+        if "element" in typ:
+            for n in range(typ["capacity"] + 1):
+                fields = [(f"s{index}_{n}_{i}", self.sort(typ["element"])) for i in range(n)]
+                datatype.declare(f"seq{index}_{n}", *fields)
+        elif "fields" in typ:
+            fields = [(f"r{index}_{i}", self.sort(t)) for i, (_, t) in enumerate(typ["fields"])]
             datatype.declare(f"mk{index}", *fields)
-            sort = datatype.create()
-            self.sorts[record["name"]] = sort
-            self.record_fields[sort.name()] = {k: i for i, (k, _) in enumerate(record["fields"])}
+        else:
+            for i, v in enumerate(typ["variants"]):
+                fields = [(f"field{index}_{i}", self.sort(v["payload"]))] if v["payload"] else []
+                datatype.declare(f"tag{index}_{i}", *fields)
+        sort = datatype.create()
+        self.sorts[typ["name"]] = sort
+        if "element" in typ:
+            self.capacities[sort.name()] = typ["capacity"]
+        elif "fields" in typ:
+            self.record_fields[sort.name()] = {k: i for i, (k, _) in enumerate(typ["fields"])}
+        else:
+            self.variants[sort.name()] = {v["tag"]: i for i, v in enumerate(typ["variants"])}
+
+    def length(self, value):
+        sort = value.sort()
+        length = z3.BitVecVal(0, 8)
+        for n in range(1, self.capacities[sort.name()] + 1):
+            length = z3.If(sort.recognizer(n)(value), z3.BitVecVal(n, 8), length)
+        return length
 
     def sort(self, typ):
         return self.sorts[typ if isinstance(typ, str) else typ["name"]]
@@ -87,11 +113,44 @@ class Encoding:
             bound = run(init)
             result = self.expression(body, {**env, name: Term(bound.value)}, flags)
             return Term(result.value, z3.And(bound.safe, result.safe))
-        if op == "apply":
+        if op == "items":
             name, actuals = args
             values = [run(arg) for arg in actuals]
+            return Term(self.sorts[name].constructor(len(values))(*[v.value for v in values]),
+                        z3.And(*[v.safe for v in values]))
+        if op == "length":
+            seq = run(args[0])
+            return Term(self.length(seq.value), seq.safe)
+        if op == "fold":
+            seq_expr, init, names, step, capacity = args
+            seq, acc = run(seq_expr), run(init)
+            sort = seq.value.sort()
+            length = self.length(seq.value)
+            safe = z3.And(seq.safe, acc.safe)
+            for i in range(capacity):
+                # Inactive selectors are unconstrained by Z3. Both the value and
+                # safety contribution of an inactive iteration are discarded.
+                item = sort.accessor(capacity, i)(seq.value)
+                for n in range(i + 1, capacity):
+                    item = z3.If(sort.recognizer(n)(seq.value), sort.accessor(n, i)(seq.value), item)
+                index = z3.BitVecVal(i, 8)
+                scope = {**env, names[0]: Term(acc.value), names[1]: Term(item), names[2]: Term(index)}
+                update = self.expression(step, scope, flags)
+                active = z3.ULT(index, length)
+                acc = Term(z3.If(active, update.value, acc.value))
+                safe = z3.And(safe, z3.Implies(active, update.safe))
+            return Term(acc.value, safe)
+        if op in ("apply", "attempt"):
+            name, actuals = args[:2]
+            values = [run(arg) for arg in actuals]
             pre, result = self.call_terms(name, values, flags)
-            return Term(result.value, z3.And(*[v.safe for v in values], pre.safe, pre.value, result.safe))
+            safe = z3.And(*[v.safe for v in values], pre.safe)
+            if op == "attempt":
+                sort = self.sorts[args[2]]
+                index = run(args[3])
+                return Term(z3.If(pre.value, sort.constructor(0)(result.value), sort.constructor(1)(index.value)),
+                            z3.And(index.safe, safe, z3.Implies(pre.value, result.safe)))
+            return Term(result.value, z3.And(safe, pre.value, result.safe))
         if op == "call":
             _, names, actuals, requires, body, ensures = args
             values = [run(arg) for arg in actuals]
@@ -166,6 +225,10 @@ class Encoding:
             return value.as_long()
         if typ == "bool":
             return z3.is_true(value)
+        if "element" in typ:
+            sort = self.sort(typ)
+            n = next(i for i in range(typ["capacity"] + 1) if value.decl() == sort.constructor(i))
+            return [self.decode(value.arg(i), typ["element"]) for i in range(n)]
         if "fields" in typ:
             return {k: self.decode(value.arg(i), t) for i, (k, t) in enumerate(typ["fields"])}
         sort = self.sorts[typ["name"]]

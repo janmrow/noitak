@@ -31,7 +31,7 @@ export function verify(unit, source, limit, engine = 'enumerate') {
     throw new Error('Case limit must be an integer from 1 to 1000000');
   if (!['enumerate', 'symbolic'].includes(engine)) throw new Error('Unknown verification engine');
   const symbolic = engine === 'symbolic';
-  const types = [...unit.enums, ...unit.records];
+  const types = unit.types;
   const checks = unit.functions.flatMap(f => {
     const domain = domainOf(f).total;
     const audit = (answer, enumerate) => crosscheck(answer, domain, limit, enumerate, 'unverified');

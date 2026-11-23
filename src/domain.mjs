@@ -1,6 +1,12 @@
 export function cardinality(type) {
   if (type === 'byte') return 256n;
   if (type === 'bool') return 2n;
+  if (type.element) {
+    const size = cardinality(type.element);
+    let total = 1n;
+    for (let length = 1; length <= type.capacity; length++) total = 1n + size * total;
+    return total;
+  }
   if (type.fields) return type.fields.reduce((n, [, t]) => n * cardinality(t), 1n);
   return type.variants.reduce((sum, v) => sum + (v.payload ? cardinality(v.payload) : 1n), 0n);
 }
@@ -9,6 +15,20 @@ export function valueAt(type, index) {
   let digit = BigInt(index);
   if (type === 'byte') return Number(digit);
   if (type === 'bool') return Boolean(digit);
+  if (type.element) {
+    const size = cardinality(type.element);
+    let count = 1n;
+    for (let length = 0; length <= type.capacity; length++) {
+      if (digit < count) return Array.from({length}, () => {
+        const value = valueAt(type.element, digit % size);
+        digit /= size;
+        return value;
+      });
+      digit -= count;
+      count *= size;
+    }
+    throw new RangeError('Invalid sequence index');
+  }
   if (type.fields) return Object.fromEntries(type.fields.map(([key, t]) => {
     const size = cardinality(t);
     const value = valueAt(t, digit % size);

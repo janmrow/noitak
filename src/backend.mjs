@@ -2,9 +2,9 @@ import { readFile, mkdir, mkdtemp, writeFile, rename, rm, rmdir, lstat } from 'n
 import { dirname, resolve, join } from 'node:path';
 import { hash } from './verify.mjs';
 
-const ts = t => t === 'byte' ? 'number' : t === 'bool' ? 'boolean' : (t.fields ? 'Record_' : 'Enum_') + t.name.replaceAll('.', '$');
+const ts = t => t === 'byte' ? 'number' : t === 'bool' ? 'boolean' : (t.element ? 'Seq_' : t.fields ? 'Record_' : 'Enum_') + t.name.replaceAll('.', '$');
 
-function declarations({ functions, enums, records }) {
+function declarations({ functions, enums, records, types }) {
   const lines = [
     "export type Result<T> = { ok: true; value: T } | { ok: false; code: 'ARGUMENT' | 'CAPABILITY' | 'ARITHMETIC' | 'PRECONDITION' | 'POSTCONDITION' | 'CALL_PRECONDITION' | 'CALL_POSTCONDITION'; phase: 'boundary' | 'requires' | 'body' | 'ensures' };",
   ];
@@ -17,6 +17,8 @@ function declarations({ functions, enums, records }) {
     const fields = record.fields.map(([key, t]) => 'readonly ' + key + ': ' + ts(t));
     lines.push('export type ' + ts(record) + ' = { ' + fields.join('; ') + ' };');
   }
+  for (const t of types.filter(t => t.element))
+    lines.push('export type ' + ts(t) + ' = ReadonlyArray<' + ts(t.element) + '>;');
   lines.push('export declare const api: {');
   for (const f of functions.filter(f => f.kind === 'fn')) {
     if (f.independent.length)

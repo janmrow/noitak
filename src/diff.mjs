@@ -51,11 +51,11 @@ export function compare(oldUnit, newUnit, before, after) {
     const a = before.dependencies[key], b = after.dependencies[key];
     if (a !== b) record(key, 'dependency-pin', 'compatible', a ?? null, b ?? null);
   }
-  const oldTypes = new Map([...oldUnit.enums, ...oldUnit.records].map(e => [e.name, e]));
-  const newTypes = new Map([...newUnit.enums, ...newUnit.records].map(e => [e.name, e]));
+  const oldTypes = new Map(oldUnit.types.map(e => [e.name, e]));
+  const newTypes = new Map(newUnit.types.map(e => [e.name, e]));
   for (const name of new Set([...oldTypes.keys(), ...newTypes.keys()])) {
     const old = oldTypes.get(name), next = newTypes.get(name);
-    if (!equal(old, next)) record(name, (old ?? next).fields ? 'record' : 'enum', old ? 'risky' : 'compatible', old ?? null, next ?? null);
+    if (!equal(old, next)) record(name, (old ?? next).element ? 'sequence' : (old ?? next).fields ? 'record' : 'enum', old ? 'risky' : 'compatible', old ?? null, next ?? null);
   }
   // A shared solver sort is sound only when a name denotes the same type in both revisions.
   const typeConflict = [...oldTypes.values()].some(e => newTypes.has(e.name) && !equal(e, newTypes.get(e.name)));

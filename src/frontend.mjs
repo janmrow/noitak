@@ -87,6 +87,34 @@ function expression(node, env, context, depth = 1) {
   }
   const [head, ...args] = list(node);
   const op = head?.atom;
+  if (op === 'items') {
+    if (!args.length) fail(node, 'E_FORM', 'Expected a sequence type');
+    const sequence = type(args[0], types);
+    if (!sequence.element) fail(args[0], 'E_TYPE', 'Expected a sequence type');
+    if (args.length - 1 > sequence.capacity) fail(node, 'E_LIMIT', 'Sequence literal exceeds capacity');
+    const values = args.slice(1).map(arg => {
+      const [actual, ir] = check(arg);
+      expect(arg, actual, sequence.element);
+      return ir;
+    });
+    return [sequence, ['items', sequence.name, values]];
+  }
+  if (op === 'length' || op === 'fold') {
+    if (args.length !== (op === 'length' ? 1 : 4)) fail(node, 'E_FORM', 'Incorrect sequence operation arity');
+    const [sequence, value] = check(args[0]);
+    if (!sequence.element) fail(args[0], 'E_TYPE', 'Expected a sequence');
+    if (op === 'length') return ['byte', ['length', value]];
+    const [acc, initial] = check(args[1]);
+    const scope = new Map(env);
+    const binders = list(args[2]);
+    if (binders.length !== 3) fail(args[2], 'E_FORM', 'Expected (accumulator element index)');
+    const names = binders.map((b, i) => bind(scope, b, [acc, sequence.element, 'byte'][i]));
+    const start = budget.work;
+    const [out, body] = check(args[3], scope);
+    expect(args[3], out, acc);
+    budget.work += (sequence.capacity - 1) * (budget.work - start);
+    return [acc, ['fold', value, initial, names, body, sequence.capacity]];
+  }
   if (op === 'make') {
     if (!args.length) fail(node, 'E_FORM', 'Expected record type');
     const record = type(args[0], types);
@@ -110,7 +138,17 @@ function expression(node, env, context, depth = 1) {
     if (!field) fail(args[1], 'E_FIELD', 'Unknown record field');
     return [field[1], ['get', value, field[0]]];
   }
-  if (op === 'call') {
+  if (op === 'call' || op === 'attempt') {
+    let outcome, index;
+    if (op === 'attempt') {
+      if (args.length < 3) fail(node, 'E_FORM', 'Expected (attempt outcome index target arguments...)');
+      outcome = type(args.shift(), types);
+      if (!outcome.success) fail(node, 'E_TYPE', 'Expected an outcome type');
+      const position = args.shift();
+      const [actual, ir] = check(position);
+      expect(position, actual, 'byte');
+      index = ir;
+    }
     const target = helpers?.get(args[0]?.atom);
     if (!target) fail(node, 'E_CALL', 'Calls in bodies must name a previously declared helper');
     if (args.length !== target.params.length + 1) fail(node, 'E_FORM', 'Incorrect call arity');
@@ -124,6 +162,10 @@ function expression(node, env, context, depth = 1) {
     });
     budget.work += target.budget.work;
     budget.depth = Math.max(budget.depth, depth + target.budget.depth);
+    if (outcome) {
+      expect(node, target.output, outcome.success);
+      return [outcome, ['attempt', target.name, values, outcome.name, index]];
+    }
     return [target.output, ['apply', target.name, values]];
   }
   if (op === 'tag') {
@@ -267,9 +309,22 @@ export function compileModule(root, dependencies, prefix = '') {
     allTypes.set(t.name,t);
   }
   for (const node of defs.filter(n => tag(n) === 'enum')) declare(node, enumeration(node));
-  const enums = new Map([...types].filter(([,t]) => t.variants));
+  const enums = new Map([...types].filter(([,t]) => t.variants && !t.success));
   for (const node of defs.filter(n => tag(n) === 'record')) declare(node, recordType(node, enums));
-  for (const node of defs.filter(n => !['import','enum','record'].includes(tag(n)))) {
+  for (const node of defs.filter(n => tag(n) === 'sequence' || tag(n) === 'outcome')) {
+    const kind = tag(node);
+    const [id, item, size] = form(node, kind, kind === 'sequence' ? 4 : 3);
+    const key = name(id), element = type(item, types);
+    if (['byte','bool'].includes(key) || element.element || element.success)
+      fail(node, 'E_TYPE', 'Expected a new name and scalar, enum or record element type');
+    if (kind === 'sequence') {
+      if (!/^[1-8]$/.test(size.atom ?? '')) fail(size, 'E_LIMIT', 'Sequence capacity must be 1 through 8');
+      declare(node, {name:key, element, capacity:Number(size.atom)});
+    } else {
+      declare(node, {name:key, success:element, variants:[{tag:'committed',payload:element}, {tag:'rejected',payload:'byte'}]});
+    }
+  }
+  for (const node of defs.filter(n => !['import','enum','record','sequence','outcome'].includes(tag(n)))) {
     const f = fn(node, types, helpers, prefix);
     const local = bind(seen, node.items[1], f);
     if (f.budget.work > 16384 || f.budget.depth > 192) fail(node, 'E_LIMIT', 'Expression work or depth exceeds limit');

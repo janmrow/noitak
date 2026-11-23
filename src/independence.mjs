@@ -8,6 +8,7 @@ import { solve } from './symbolic.mjs';
 function initialExpression(t) {
   if (t === 'byte') return 0;
   if (t === 'bool') return false;
+  if (t.element) return ['items', t.name, []];
   if (t.fields) return ['make', t.name, t.fields.map(([k, field]) => [k, initialExpression(field)])];
   const {tag, payload} = t.variants[0];
   return ['tag', t.name, tag, ...(payload ? [initialExpression(payload)] : [])];
