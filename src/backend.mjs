@@ -1,5 +1,6 @@
-import { readFile, mkdir, mkdtemp, writeFile, rename, rm, rmdir, lstat } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile, rename, rm, rmdir, lstat } from 'node:fs/promises';
 import { dirname, resolve, join } from 'node:path';
+import { emitModule } from './emitter.mjs';
 import { hash } from './verify.mjs';
 
 const scalarTypes = {byte: 'number', u32: 'number', bool: 'boolean', uuid: 'string'};
@@ -55,17 +56,7 @@ export async function publishDirectory(staged, target) {
 
 export async function build(unit, report, destination, review) {
   if (!report.passed) throw new Error('Required proof failed');
-  const runtime = await readFile(new URL('./runtime.mjs', import.meta.url), 'utf8');
-  const exports = 'export { argument, execute, invoke, predicate };';
-  if (!runtime.trimEnd().endsWith(exports)) throw new Error('Unexpected runtime export layout');
-  const core = runtime.trimEnd().slice(0, -exports.length);
-  const entries = unit.functions.filter(f => f.kind === 'fn');
-  const graph = Object.fromEntries(entries.flatMap(f => Object.entries(f.graph)));
-  const functions = JSON.stringify(entries.map(({loc, graph, budget, ...f}) => f));
-  const js = core + '\nconst graph = ' + JSON.stringify(graph) + ';\nconst functions = ' + functions + ';\n' +
-    'export const api = Object.create(null);\n' +
-    'for (const f of functions) { f.graph = graph; api[f.name] = (flags, ...args) => invoke(f, flags, args); }\n' +
-    'Object.freeze(api);\n';
+  const js = await emitModule(unit);
   const types = declarations(unit);
   const files = new Map([['module.mjs', js], ['module.d.mts', types]]);
   if (review) {

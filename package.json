@@ -27,6 +27,7 @@
     "noitak.mjs",
     "noi.mjs",
     "src/*.mjs",
+    "src/compiled-runtime.js.inc",
     "src/symbolic_worker.py",
     "requirements-symbolic.txt",
     "docs/language.md",
