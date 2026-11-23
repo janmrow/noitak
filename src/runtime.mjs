@@ -13,6 +13,9 @@ function evaluate(expr, env, flags, graph) {
   const [op, a, b, c] = expr;
   const run = e => evaluate(e, env, flags, graph);
   switch (op) {
+    case 'uuid':
+    case 'u32': return a;
+    case 'widen': return run(a);
     case 'let': return evaluate(c, new Map(env).set(a, run(b)), flags, graph);
     case 'if': return run(a) ? run(b) : run(c);
     case 'flag': return flags.get(a);
@@ -66,9 +69,11 @@ function evaluate(expr, env, flags, graph) {
     case '<': return run(a) < run(b);
     case '<=': return run(a) <= run(b);
     case '+':
-    case '-': {
-      const n = op === '+' ? run(a) + run(b) : run(a) - run(b);
-      if (n < 0 || n > 255) throw new RangeFault();
+    case '-':
+    case 'u32+':
+    case 'u32-': {
+      const n = op.endsWith('+') ? run(a) + run(b) : run(a) - run(b);
+      if (n < 0 || n > (op.startsWith('u32') ? 0xffffffff : 255)) throw new RangeFault();
       return n;
     }
     default: throw new Error('Invalid instruction');
@@ -100,6 +105,9 @@ function execute(f, args, flags) {
 
 function argument(type, value) {
   if (type === 'bool') return typeof value === 'boolean' ? value : undefined;
+  if (type === 'uuid') return typeof value === 'string' && value.length === 36 &&
+    /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value) ? value : undefined;
+  if (type === 'u32') return Number.isInteger(value) && value >= 0 && value <= 0xffffffff ? value + 0 : undefined;
   if (type === 'byte') return Number.isInteger(value) && value >= 0 && value <= 255 ? value + 0 : undefined;
   if (value === null || typeof value !== 'object') return undefined;
   if (type.element) {
@@ -134,8 +142,13 @@ function argument(type, value) {
 function invoke(f, flags, args) {
   if (args.length !== f.params.length) return error('ARGUMENT', 'boundary');
   let values;
-  try { values = args.map((v, i) => argument(f.params[i][1], v)); }
-  catch { return error('ARGUMENT', 'boundary'); }
+  try {
+    values = args.map((v, i) => {
+      const type = f.params[i][1];
+      if (f.capacity && i === 1) return argument({element: type, capacity: f.capacity}, v);
+      return argument(type, v);
+    });
+  } catch { return error('ARGUMENT', 'boundary'); }
   if (values.includes(undefined)) return error('ARGUMENT', 'boundary');
   const snapshot = new Map();
   if (!flags || typeof flags !== 'object') return error('CAPABILITY', 'boundary');
@@ -148,7 +161,19 @@ function invoke(f, flags, args) {
   } catch {
     return error('CAPABILITY', 'boundary');
   }
-  const outcome = execute(f, values, snapshot);
+  let outcome;
+  if (f.capacity) {
+    let state = values[0];
+    const items = values[1];
+    const admitted = predicate(f, 'requires', [state], snapshot);
+    if (admitted !== true) return error(admitted === false ? 'PRECONDITION' : 'ARITHMETIC', 'requires');
+    for (const item of items) {
+      const step = execute(f, [state, item], snapshot);
+      if (!step.ok) return step;
+      state = step.value;
+    }
+    outcome = {ok: true, value: state};
+  } else outcome = execute(f, values, snapshot);
   // Materialize a fresh value tree so JS reference aliases cannot expose which
   // source expression produced equal structured results.
   if (outcome.ok) outcome.value = argument(f.output, outcome.value);

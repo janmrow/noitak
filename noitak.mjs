@@ -9,7 +9,7 @@ import { testVectors } from './src/vectors.mjs';
 
 import { formatReview } from './src/review.mjs';
 
-const usage = 'noitak <check FILE | verify FILE | build FILE NEW_DIR | diff OLD NEW | gate OLD NEW NEW_DIR | test FILE VECTORS> [--json] [--limit N] [--engine enumerate|symbolic]';
+const usage = 'noitak <check FILE | verify FILE | build FILE NEW_DIR | diff OLD NEW | gate OLD NEW NEW_DIR | test FILE VECTORS> [--json] [--limit N] [--engine enumerate|symbolic|auto]';
 const argv = process.argv.slice(2);
 const json = argv.includes('--json');
 function print(data) {
@@ -37,7 +37,7 @@ async function main() {
     if (tokens[i] === '--limit') limit = Number(tokens[++i]);
     else if (tokens[i] === '--engine') {
       engine = tokens[++i];
-      if (!['verify','diff','build','gate'].includes(command) || !['symbolic','enumerate'].includes(engine))
+      if (!['verify','diff','build','gate'].includes(command) || !['symbolic','enumerate','auto'].includes(engine))
         throw new Error(usage);
     }
     else if (tokens[i] === '--json') continue;

@@ -1,6 +1,7 @@
 """Translate one checked function to Z3. Only the JSON protocol crosses stdin/stdout."""
 import json
 import sys
+from uuid import UUID
 from dataclasses import dataclass
 
 try:
@@ -18,7 +19,8 @@ class Term:
 
 class Encoding:
     def __init__(self, types):
-        self.sorts = {"byte": z3.BitVecSort(8), "bool": z3.BoolSort()}
+        self.sorts = {"byte": z3.BitVecSort(8), "bool": z3.BoolSort(),
+                      "u32": z3.BitVecSort(32), "uuid": z3.BitVecSort(128)}
         self.variants = {}
         self.summaries = {}
         self.record_fields = {}
@@ -106,6 +108,13 @@ class Encoding:
         def run(arg):
             return self.expression(arg, env, flags)
 
+        if op == "u32":
+            return Term(z3.BitVecVal(args[0], 32))
+        if op == "uuid":
+            return Term(z3.BitVecVal(UUID(args[0]).int, 128))
+        if op == "widen":
+            term = run(args[0])
+            return Term(z3.ZeroExt(24, term.value), term.safe)
         if op == "flag":
             return flags[args[0]]
         if op == "let":
@@ -208,9 +217,9 @@ class Encoding:
         if op == "or":
             return Term(z3.Or(a, b), z3.And(left.safe, z3.Implies(z3.Not(a), right.safe)))
         safe = z3.And(left.safe, right.safe)
-        if op == "+":
+        if op in ("+", "u32+"):
             return Term(a + b, z3.And(safe, z3.UGE(a + b, a)))
-        if op == "-":
+        if op in ("-", "u32-"):
             return Term(a - b, z3.And(safe, z3.UGE(a, b)))
         if op == "=":
             return Term(a == b, safe)
@@ -221,7 +230,9 @@ class Encoding:
         raise ValueError("Unsupported instruction")
 
     def decode(self, value, typ):
-        if typ == "byte":
+        if typ == "uuid":
+            return str(UUID(int=value.as_long()))
+        if typ in ("byte", "u32"):
             return value.as_long()
         if typ == "bool":
             return z3.is_true(value)

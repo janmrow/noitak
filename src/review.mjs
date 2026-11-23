@@ -14,6 +14,7 @@ export function formatReview(report) {
     if (claims[c.field]) {
       lines.push('Review claim: ' + claims[c.field]);
       lines.push(`Method: ${c.method}. Potential cases: ${c.comparisonDomain}`);
+      if (c.scope === 'one-transition') lines.push('Reducer comparison uses one item and an admitted starting state.');
       if (c.field === 'body') {
         const calls = new Set([...(report.before.calls?.[c.subject] ?? []), ...(report.after.calls?.[c.subject] ?? [])]);
         if (calls.size) lines.push('Direct calls: ' + [...calls].join(', '));

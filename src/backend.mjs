@@ -2,7 +2,13 @@ import { readFile, mkdir, mkdtemp, writeFile, rename, rm, rmdir, lstat } from 'n
 import { dirname, resolve, join } from 'node:path';
 import { hash } from './verify.mjs';
 
-const ts = t => t === 'byte' ? 'number' : t === 'bool' ? 'boolean' : (t.element ? 'Seq_' : t.fields ? 'Record_' : 'Enum_') + t.name.replaceAll('.', '$');
+const scalarTypes = {byte: 'number', u32: 'number', bool: 'boolean', uuid: 'string'};
+
+function ts(t) {
+  if (typeof t === 'string') return scalarTypes[t];
+  const prefix = t.element ? 'Seq_' : t.fields ? 'Record_' : 'Enum_';
+  return prefix + t.name.replaceAll('.', '$');
+}
 
 function declarations({ functions, enums, records, types }) {
   const lines = [
@@ -21,10 +27,13 @@ function declarations({ functions, enums, records, types }) {
     lines.push('export type ' + ts(t) + ' = ReadonlyArray<' + ts(t.element) + '>;');
   lines.push('export declare const api: {');
   for (const f of functions.filter(f => f.kind === 'fn')) {
+    if (f.capacity)
+      lines.push('  /** Ordered reduction. Maximum input length: ' + f.capacity + '. */');
     if (f.independent.length)
       lines.push('  /** Verified admission and return value independence from ' + f.independent.join(', ') + '. */');
     const flags = f.reads.map(k => 'readonly ' + k + ': boolean').join('; ');
-    const params = f.params.map(([name, t]) => 'arg_' + name + ': ' + ts(t));
+    const params = f.params.map(([name, t], i) => 'arg_' + name + ': ' +
+      (f.capacity && i === 1 ? 'ReadonlyArray<' + ts(t) + '>' : ts(t)));
     lines.push('  readonly ' + f.name + ': (' + ['flags: { ' + flags + ' } & object', ...params].join(', ') +
       ') => Result<' + ts(f.output) + '>;');
   }

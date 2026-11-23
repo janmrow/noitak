@@ -1,4 +1,6 @@
 export function cardinality(type) {
+  if (type === 'uuid') return 1n << 128n;
+  if (type === 'u32') return 1n << 32n;
   if (type === 'byte') return 256n;
   if (type === 'bool') return 2n;
   if (type.element) {
@@ -13,7 +15,11 @@ export function cardinality(type) {
 
 export function valueAt(type, index) {
   let digit = BigInt(index);
-  if (type === 'byte') return Number(digit);
+  if (type === 'uuid') {
+    const hex = digit.toString(16).padStart(32, '0');
+    return [hex.slice(0,8), hex.slice(8,12), hex.slice(12,16), hex.slice(16,20), hex.slice(20)].join('-');
+  }
+  if (type === 'byte' || type === 'u32') return Number(digit);
   if (type === 'bool') return Boolean(digit);
   if (type.element) {
     const size = cardinality(type.element);

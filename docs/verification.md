@@ -2,7 +2,7 @@
 
 For every well-typed assignment of parameters and declared flags, evaluating the precondition must be safe. At least one assignment must pass it. For **every admitted assignment**, the body must compute a value without a fault and the postcondition must safely return true for that value. Authorization decisions made by the host are outside this obligation.
 
-## Two ways to check one obligation
+## Selecting evidence for an obligation
 
 **Enumeration** is the default. Each byte contributes 256 choices, each boolean or flag contributes two, and a tagged type contributes the sum of its variant cardinalities. A record contributes the product of its field cardinalities. The verifier calculates the Cartesian product with BigInt before examining any case. A function above the configured case limit receives an unverified result. Within the limit, the first parameter varies fastest, followed by later parameters and sorted flags. Failure returns the first counterexample in that order.
 
@@ -36,7 +36,7 @@ The signed-order mutation test runs a separate compiler copy with one mistransla
 
 On POSIX, build and gate claim the fresh destination with an exclusive directory creation after staging all files. The destination can briefly appear empty before the complete bundle is renamed into place. A competing creator that claims the name first keeps its directory. Consume the bundle after the command exits successfully. An interruption during publication can leave an empty reservation behind. Use a fresh destination to retry.
 
-Function verification report schema 4 records source and dependency SHA-256 digests, module identity and version, tool version, proof method and configuration, per-function reads, the direct call graph and exact domain cardinalities. Each function check identifies the obligation, source location, and outcome. Enumeration supplies examined and admitted counts. The symbolic engine records the Z3 version when available. Builds also hash the ESM and declaration bytes and publish the files together. Digests are unsigned.
+Function verification report schema 5 records source and dependency SHA-256 digests, module identity and version, tool version, proof method and configuration, per-function reads, the direct call graph and exact domain cardinalities. Each function check identifies the obligation, source location, and outcome. Enumeration supplies examined and admitted counts. The symbolic engine records the Z3 version when available. Builds also hash the ESM and declaration bytes and publish the files together. Digests are unsigned.
 
 | Status | Meaning |
 | --- | --- |
@@ -50,7 +50,7 @@ The trusted base includes the frontend, selected proof engine, JS evaluator, art
 
 ## Comparing revisions
 
-Diff report schema 5 includes both verification reports. The selected engine also compares eligible functions. Enumeration honors the case limit. Z3 comparison uses a separate counterexample query with the same time bounds as individual proofs. Names, positional parameter types, result type, reads and public enum and record definitions are part of the comparison. It ignores locations and formatting when comparing expressions.
+Diff report schema 6 includes both verification reports. The selected engine also compares eligible functions. Enumeration honors the case limit. Z3 comparison uses a separate counterexample query with the same time bounds as individual proofs. Names, positional parameter types, result type, reads and public enum and record definitions are part of the comparison. It ignores locations and formatting when comparing expressions.
 
 For functions proven on both sides with matching signatures and reads, the following rules apply to **edited contracts**. Let A and B denote the old and candidate revisions respectively.
 
@@ -75,11 +75,11 @@ For symbolic comparison both programs share the same input symbols, flags and co
 Coverage compares obligation, status and exact domain size. Each finding stands independently. A new export with a grant therefore produces both an export finding and a policy violation. Only compatible findings pass the gate.
 
 
-Gate publishes only if both revisions pass their own proofs and all findings are compatible. The candidate IR and source digest flow from the comparison to the build in the same process. The artifact manifest additionally identifies the exact review.json bytes. For a real change decision the caller selects a trusted baseline, toolchain and policy. The CI job exercises all three TypeScript pilots. A passing experiment job means even the expected refusals were reproduced.
+Gate publishes only if both revisions pass their own proofs and all findings are compatible. The candidate IR and source digest flow from the comparison to the build in the same process. The artifact manifest additionally identifies the exact review.json bytes. For a real change decision the caller selects a trusted baseline, toolchain and policy. CI exercises the delivery and support pilots and the installed TypeScript metering consumer. A passing experiment job means even the expected refusals were reproduced.
 
 The body comparison applies to root and imported public functions, with private implementations taken from the reachable call graph. A private-only refactor may change the source digest without changing a public outcome. Adding a grant to a private helper is a policy violation, even when the caller already has it. Removing an independence guarantee from a retained helper or public entry requires review. Removed exports and changes to exposed record definitions remain risky. A fresh proof of every required check on both revisions is mandatory for publication.
 
-Consumers of schema 4 function reports should index checks by `(function, property)`. Multiple checks may describe one function, and private helper checks are included. A `passed` value covers the aggregate. CI consumers should also check the process exit status and use the new invocation's artifact digests.
+Consumers of schema 5 function reports should index checks by `(function, property)`. Multiple checks may describe one function, and private helper checks are included. A `passed` value covers the aggregate. CI consumers should also check the process exit status and use the new invocation's artifact digests.
 
 
 ## Bounded data and linked evidence
@@ -87,3 +87,22 @@ Consumers of schema 4 function reports should index checks by `(function, proper
 For element cardinality K and capacity C, sequence cardinality is the sum of K^i for i from zero through C. Enumeration visits increasing lengths, then varies the first element fastest. Z3 uses a distinct datatype constructor for each legal length. Each fold iteration guards both its accumulator update and its safety condition by presence of the element. Inactive datatype selectors cannot contribute a value or a fault. An attempted call always requires safe index, arguments and admission; callee body and postcondition safety are required on admission.
 
 A pin change records a dependency finding. Independent safety, authority, interface and relational findings determine whether the gate can accept the revision. The loader verifies the entire pin chain before a result can be published. The report includes even unused imported functions and their proofs. The root export's call edges identify its dependency path. All root and imported types enter the relational type-layout check. The CLI snapshots each revision separately and builds from the reviewed candidate graph. Pins and unsigned digests identify content; a consumer still supplies the trusted baseline and toolchain.
+
+## Inductive proofs and evidence policy
+
+For a reducer with state S, row X, fixed flags F, invariant I and step T, verify ordinary nonempty admission and the following universal step obligation:
+
+```text
+safe(I(S,F))
+I(S,F) ⇒ safe(T(S,X,F)) ∧ I(T(S,X,F),F) ∧ stepGuarantee(S,X,T(S,X,F),F)
+```
+
+Both exit predicates must evaluate safely on an admitted step. Runtime admission supplies the base case. Induction on the number of rows processed establishes the invariant at every prefix of any well-typed admitted batch up to capacity. Empty input preserves the initial state. The one-transition domain counts states × rows × flags. It does not count input arrays. A failed or unresolved transition leaves the derived property unverified. A reported step witness uses `[state, row]`. Supply `[state, [row]]` as positional host arguments.
+
+The comparison of two proven reducers with the same calling convention and capacity checks admission, the combined next-state and step promises, and observed one-step returns. Preservation of admission and equality of successive states establish equal final values on old admitted batches by induction. Capacity reduction is an interface risk. Increasing it expands the accepted per-call resource budget and is a policy violation. A change between reducer and ordinary entry also requires review.
+
+The default enumerable proof budget and explicit symbolic engine remain available. With `--engine auto` each proof or comparison uses enumeration up to `--limit` and chooses Z3 above that threshold. This choice happens before the query. Solver uncertainty persists. Specifying `--engine enumerate` instead makes that limit a hard refusal for oversized domains. Symbolic comparisons and proofs keep their configured time limits.
+
+Schema 5 separates static and runtime enforcement in `enforced`, required formal checks in `checks`, and unsupported claims in `outsideProof`. Vectors report tested cases through the test command. Every declared formal obligation is mandatory for build and gate, including induction and independence. Engine selection changes the evidence method. It cannot relax this acceptance policy.
+
+An intentional revision to a public promise requires an authority outside the candidate. Review the blocked finding and witness against the changed requirement, then promote an independently approved baseline through the project's trusted release process. A future authorization format could bind the old and new digests, named relation and approving identity while continuing to require proofs of both revisions and all other relations. The CLI currently implements no exception or self-approval field.

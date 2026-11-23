@@ -69,3 +69,24 @@ test('CLI loader refuses oversized input before parsing it', async t => {
   await writeFile(file,Buffer.alloc(1048577,32));
   await assert.rejects(load(file),e=>e.detail?.code==='E_LIMIT' && e.detail.file===file);
 });
+
+test('imported reducers retain their public resource contract and cannot be invoked as ordinary steps', async t => {
+  const dir = await mkdtemp(join(tmpdir(),'noitak-reducer-import-'));
+  t.after(()=>rm(dir,{recursive:true,force:true}));
+  async function snapshot(capacity, body) {
+    const lib = `(module lib 1.0.0 (reducer run ((s bool) (x bool)) bool (reads)
+      (capacity ${capacity}) (invariant true) (ensures true) x))`;
+    const root = `(module app 1.0.0 (import lib ${hash(lib)})
+      (fn f () bool (reads) (requires true) (ensures true) ${body}))`;
+    await writeFile(join(dir,'lib.noi'),lib);
+    const file = join(dir,'root.noi');
+    await writeFile(file,root);
+    return load(file);
+  }
+  const old = await snapshot(4,'true'), next = await snapshot(5,'true');
+  const prove = x=>verify(x.unit,x.bytes,4);
+  const review = compare(old.unit,next.unit,prove(old),prove(next));
+  assert.equal(review.passed,false);
+  assert.ok(review.changes.some(c=>c.subject==='lib.run' && c.field==='reducer-capacity' && c.status==='policy-violation'));
+  await assert.rejects(snapshot(4,'(call lib.run true false)'),e=>e.detail?.code==='E_CALL');
+});

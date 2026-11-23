@@ -2,7 +2,7 @@ import { cardinality, domainOf } from './domain.mjs';
 import { crosscheck } from './crosscheck.mjs';
 import { execute } from './runtime.mjs';
 import { refinement } from './refinement.mjs';
-import { solveRelation, symbolicConfig } from './symbolic.mjs';
+import { solveRelation, usesSymbolic } from './symbolic.mjs';
 
 const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -23,11 +23,13 @@ function compareBodies(old, next) {
 function compareField(old, next, field, context) {
   const {configuration, proven, types} = context;
   const domain = domainOf(old).total * (field === 'ensures' ? cardinality(old.output) : 1n);
-  const symbolic = configuration.method === symbolicConfig.method;
+  const symbolic = usesSymbolic(configuration, domain);
   const evidence = { method: symbolic ? 'symbolic' : 'enumerate', comparisonDomain: String(domain),
     parameters: old.params.map(([name]) => name) };
+  if (old.capacity && next.capacity) evidence.scope = 'one-transition';
   const unresolved = reason => ({ ...evidence, status: 'undetermined', reason });
   if (!proven) return unresolved('missing-function-proof');
+  if (Boolean(old.capacity) !== Boolean(next.capacity)) return unresolved('incompatible-entry-convention');
   if (!['params', 'output', 'reads'].every(k => equal(old[k], next[k])))
     return unresolved('incompatible-interface');
   const limit = configuration.maxCasesPerFunction;
@@ -80,6 +82,11 @@ export function compare(oldUnit, newUnit, before, after) {
       continue;
     }
     newer.delete(old.name);
+    if (old.capacity !== next.capacity) {
+      const expanded = old.capacity && next.capacity && next.capacity > old.capacity;
+      record(old.name, 'reducer-capacity', expanded ? 'policy-violation' : 'risky',
+        old.capacity ?? null, next.capacity ?? null);
+    }
     for (const field of ['params', 'output', 'requires', 'ensures', 'body', 'reads', 'independent']) {
       if (equal(old[field], next[field]) && (field !== 'body' || equal(old.graph, next.graph))) continue;
       if (['requires', 'ensures', 'body'].includes(field)) {
@@ -110,7 +117,7 @@ export function compare(oldUnit, newUnit, before, after) {
       changes.push({ subject: c.function, field, status: 'policy-violation',
         property: c.property, reason: c.reason ?? c.status, proofDomain: c.domain, proofStatus: c.status, counterexample: c.counterexample });
   }
-  return { schema: 5, toolVersion: after.toolVersion, configuration: after.configuration,
+  return { schema: 6, toolVersion: after.toolVersion, configuration: after.configuration,
     before, after,
     changes, passed: before.passed && after.passed && changes.every(c => c.status === 'compatible') };
 }

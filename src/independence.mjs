@@ -6,6 +6,7 @@ import { execute } from './runtime.mjs';
 import { solve } from './symbolic.mjs';
 
 function initialExpression(t) {
+  if (t === 'uuid' || t === 'u32') return [t, valueAt(t, 0)];
   if (t === 'byte') return 0;
   if (t === 'bool') return false;
   if (t.element) return ['items', t.name, []];

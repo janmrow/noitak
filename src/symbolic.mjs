@@ -2,7 +2,12 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { argument, invoke, predicate } from './runtime.mjs';
 
-export const symbolicConfig = { method: 'z3-bv8-datatypes-v3', timeoutMsPerQuery: 3000, timeoutMsPerWorker: 10000 };
+export const symbolicConfig = { method: 'z3-bitvectors-datatypes-v4', timeoutMsPerQuery: 3000, timeoutMsPerWorker: 10000 };
+export function usesSymbolic(configuration, domain) {
+  return configuration.engine === 'symbolic' ||
+    (configuration.engine === 'auto' && domain > BigInt(configuration.maxCasesPerFunction));
+}
+
 const worker = fileURLToPath(new URL('./symbolic_worker.py', import.meta.url));
 
 const unknown = reason => ({ status: 'unverified', reason });
@@ -53,13 +58,18 @@ export function solve(f, types, spawn = spawnSync) {
       const model = typedInput(f, answer.input);
       if (!model) return unknown('model-replay-disagreement');
       const {args, flags} = model;
-      const outcome = invoke(f, flags, args);
+      const outcome = invokeTransition(f, flags, args);
       if (['POSTCONDITION','ARITHMETIC','CALL_PRECONDITION','CALL_POSTCONDITION'].includes(outcome.code))
         return { status: 'violated', solverVersion, counterexample: {args, flags, outcome} };
       return unknown('model-replay-disagreement');
     }
   }
   return unknown('invalid-worker-response');
+}
+
+// A reducer proof quantifies one transition. Replay it as a one-element host batch.
+function invokeTransition(f, flags, args) {
+  return invoke(f, flags, f.capacity ? [args[0], [args[1]]] : args);
 }
 
 function typedInput(f, input) {
@@ -89,7 +99,7 @@ function replay(old, next, field, input) {
     const after = predicate(next, field, args, grants, result);
     if (after === true && before !== true) return { args, flags, result, before, after };
   } else {
-    const before = invoke(old, flags, args), after = invoke(next, flags, args);
+    const before = invokeTransition(old, flags, args), after = invokeTransition(next, flags, args);
     if (before.ok && after.ok && JSON.stringify(before.value) !== JSON.stringify(after.value))
       return { args, flags, before, after };
   }
