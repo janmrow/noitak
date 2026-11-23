@@ -1,28 +1,39 @@
-# Noitak 0.5
+# Noitak 0.6
 
-Noitak compiles verified, finite state transitions and projections into standalone JavaScript modules with TypeScript declarations. A module can consume a structured snapshot, call contracted helpers and return a new value. A change gate checks admission, guarantees, observed returns and authority before publishing a candidate. [Project philosophy](docs/philosophy.md)
+Noitak aims to become a practical programming language for software built primarily by AI agents, where safety, verifiable guarantees, and change control are first-class parts of programming. Today it compiles pure, contracted components into standalone JavaScript with TypeScript declarations. [Project philosophy](docs/philosophy.md)
 
-## Use 0.5 in an application
+## Use a component in TypeScript
 
-A module can import a pinned transition library, process a bounded sequence and return either the final state or the first rejected index. The compiler checks the batch contract, explicit authority and any declared independence of the result. The host owns persistence. [Batch source](pilot/support/batch.noi) · [TypeScript caller](pilot/support/batch-service.mts)
+The metering reducer reconciles ordered readings against a meter's serial number and quota. It accepts up to 8,192 records per call. The verifier checks one transition for every valid state and reading, then uses induction to establish that usage stays within quota after every prefix. A separate tenant-access policy checks ownership, revocation, delegated grants and expiration using canonical identifiers. [Metering component](pilot/metering/metering.noi) · [TypeScript consumer](pilot/metering/service.mts) · [Access policy](pilot/access/access.noi)
 
-The distribution is an npm-format tarball for use as a pinned build dependency. In the directory containing the release assets, check their digest. From a host project, install the tarball and run its local command:
+Build a development tarball from a checkout with Node 22+, npm and Python 3.10+. Use a fresh destination for each release check.
 
 ```sh
-sha256sum --check SHA256SUMS
-npm install --save-dev ./noitak-0.5.0.tgz
-./node_modules/.bin/noitak --version
-./node_modules/.bin/noitak build node_modules/noitak/examples/quota.noi build/quota
+npm ci
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -r requirements-symbolic.txt
+npm run release:check -- build/distribution
 ```
 
-Ship the generated ESM to the application. Generated modules need neither Noitak nor a solver at runtime. For a change-controlled deployment use `gate BASELINE CANDIDATE NEW_DIR` and consume the bundle only on exit zero. For symbolic verification install the pinned Python dependency in the build environment. [Installation, supported use and release evidence](docs/release-0.5.md)
+In a TypeScript application, install the checked tarball as a dev dependency. These commands assume the tarball is in the project root, TypeScript is installed, and the Python build environment is active.
 
-| Capability | 0.4 | 0.5 |
-| --- | --- | --- |
-| Composition | Private helpers embedded at call sites | Linked call frames and digest-pinned public imports |
-| Data and control flow | Records, tagged values and branches | Bounded sequences, indexed folds and typed outcomes |
-| Failure | False nested admission faults a strict caller | An attempted call can return a typed rejection and index |
-| Change review | Contracts, returns, reads and independence within a module | Adds dependency digests and relational checks across reachable module calls |
+```sh
+npm install --save-dev ./noitak-0.6.0.tgz
+python -m pip install -r node_modules/noitak/requirements-symbolic.txt
+npx --no-install noitak verify node_modules/noitak/pilot/metering/metering.noi --engine auto
+npx --no-install noitak build node_modules/noitak/pilot/metering/metering.noi meter/verified --engine auto
+cp node_modules/noitak/pilot/metering/service.mts meter/service.mts
+npx --no-install tsc --strict --module nodenext meter/service.mts
+```
+
+Import `MeterStore` from `./meter/service.mjs` or call `api.reconcile(flags, account, readings)` from the generated module. Ship the ESM with the application. Python and Z3 run only at build time. For updates, use a trusted baseline, edit a separate candidate, and consume the fresh candidate bundle after a successful gate.
+
+```sh
+npx --no-install noitak gate baseline/metering.noi candidate/metering.noi next/verified --engine auto
+```
+
+The release check installs the package offline, makes a real implementation edit, gates it and runs a strict TypeScript consumer against the approved bytes. Read the assessment for timings, security assumptions and migration details. [0.6 engineering assessment](docs/release-0.6.md)
 
 ## Run the support workflow
 
@@ -169,7 +180,7 @@ The original `node noi.mjs` entry point remains available for existing scripts. 
 
 ## Scope
 
-The proof covers execution on the declared finite domains and assumes the compiler, evaluator and JS environment implement the documented semantics. TypeScript describes bytes as numbers. The runtime checks their actual range. Flag reads consume explicit host data. Observable independence covers annotated parameters, typed inputs and fixed flags. Application authorization, timing, storage and host code sit outside the proof. Source and artifact digests identify bytes. Distribution and signer identity require separate controls.
+The proof covers declared input domains and, for reducers, invariant-preserving steps and assumes the compiler, evaluator and JS environment implement the documented semantics. TypeScript describes integers as numbers and UUIDs as strings. The runtime checks ranges and canonical form. Flag reads consume explicit host data. Observable independence covers annotated parameters, typed inputs and fixed flags. Application authorization, timing, storage and host code sit outside the proof. Source and artifact digests identify bytes. Distribution and signer identity require separate controls.
 
 - [0.4 engineering assessment and migration](docs/release-0.4.md)
 - [Language and execution rules](docs/language.md)

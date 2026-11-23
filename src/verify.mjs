@@ -5,7 +5,7 @@ import { solve, symbolicConfig, usesSymbolic } from './symbolic.mjs';
 import { checkIndependence } from './independence.mjs';
 import { crosscheck, CROSSCHECK_LIMIT } from './crosscheck.mjs';
 
-export const VERSION = '0.5.0';
+export const VERSION = '0.6.0';
 export const DEFAULT_LIMIT = 65536;
 export const hash = data => createHash('sha256').update(data).digest('hex');
 

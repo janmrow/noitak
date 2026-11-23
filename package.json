@@ -1,6 +1,6 @@
 {
   "name": "noitak",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "license": "Apache-2.0",
   "private": true,
   "type": "module",
@@ -19,7 +19,7 @@
   "devDependencies": {
     "typescript": "5.9.3"
   },
-  "description": "Verification-first compiler for bounded state transitions and event batches",
+  "description": "Verification-first language for typed components and change-controlled data processing",
   "bin": {
     "noitak": "noitak.mjs"
   },
@@ -31,7 +31,14 @@
     "requirements-symbolic.txt",
     "docs/language.md",
     "docs/verification.md",
+    "docs/philosophy.md",
+    "docs/architecture.md",
     "docs/release-0.5.md",
+    "docs/release-0.6.md",
+    "pilot/metering/metering.noi",
+    "pilot/metering/service.mts",
+    "pilot/metering/reference.mts",
+    "pilot/access/access.noi",
     "examples/quota.noi",
     "pilot/support/support.noi",
     "pilot/support/batch.noi"

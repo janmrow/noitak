@@ -1,5 +1,13 @@
 # Noitak roadmap
 
+## Proposed 0.7 milestone
+
+The metering reducer moved the ordering loop, checked quantities, and tenant-sized identifiers into Noitak. The invariant proof cost is independent of batch length, while the runtime cost grows with each reading. The interpreter dispatches IR, allocates lexical environments, copies inputs, and reevaluates contracts throughout the loop. The independent TypeScript model is much faster on trusted values. The benchmark measures the aggregate and does not attribute it to individual operations. [0.6 measurements](release-0.6.md)
+
+Prioritize an efficient checked execution backend. Profile snapshots, expression evaluation and contract checks separately. Lower checked expressions to structured JS or a compact instruction sequence while preserving boundary validation, checked arithmetic, selected-branch evaluation, fresh results and the approved artifact identity. Keep the current evaluator as an independent differential oracle. Acceptance should include the existing tenants and metering workloads, fault-phase agreement, change-gate evidence, throughput and allocation measurements on valid and rejected batches. Reassess the priority if real consumers spend most of their time elsewhere.
+
+A future effect system could represent external operations as typed requests whose construction requires a declared capability. A trusted host would interpret requests and provide typed replies, with authority changes visible to the gate. Issuance of a request could be verified. Successful I/O, fresh data, transaction isolation and host compliance would require separate assumptions. The current workloads need only decisions and pure transitions, so a general I/O layer can wait.
+
 ## Original 0.5 proposal
 
 The support service currently owns the event loop. Version 0.4 proves each transition and the customer projection. It leaves ordering, stopping at the first inadmissible event and atomic publication of a successful batch to the host. Its private-call representation also duplicates checked bodies when serialized. A realistic next milestone is a reusable transition module and a verified bounded batch processor, exercised by an ordinary TypeScript caller.
