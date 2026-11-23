@@ -1,12 +1,12 @@
 // At fixed public inputs and flags, equality to one fixed reference run implies
 // pairwise equality. Function safety must already hold on the entire domain.
 import { isDeepStrictEqual } from 'node:util';
-import { domainOf, valueAt } from './domain.mjs';
+import { domainOf, sampleValue, exceeds } from './domain.mjs';
 import { execute } from './runtime.mjs';
 import { solve } from './symbolic.mjs';
 
 function initialExpression(t) {
-  if (t === 'uuid' || t === 'u32') return [t, valueAt(t, 0)];
+  if (['text','uuid','u32'].includes(t)) return [t, sampleValue(t, 0)];
   if (t === 'byte') return 0;
   if (t === 'bool') return false;
   if (t.element) return ['items', t.name, []];
@@ -18,7 +18,7 @@ function initialExpression(t) {
 export function checkIndependence(f, types, limit, symbolic) {
   const hidden = new Set(f.independent);
   const witness = (args, flags) => {
-    const referenceArgs = f.params.map(([name, t], i) => hidden.has(name) ? valueAt(t, 0) : args[i]);
+    const referenceArgs = f.params.map(([name, t], i) => hidden.has(name) ? sampleValue(t, 0) : args[i]);
     const outcome = execute(f, args, flags);
     const referenceOutcome = execute(f, referenceArgs, flags);
     if (!isDeepStrictEqual(outcome, referenceOutcome))
@@ -26,7 +26,7 @@ export function checkIndependence(f, types, limit, symbolic) {
   };
   if (!symbolic) {
     const domain = domainOf(f);
-    if (domain.total > BigInt(limit)) return { status: 'unverified', reason: 'case-budget' };
+    if (exceeds(domain.total, limit)) return { status: 'unverified', reason: 'case-budget' };
     let examined = 0;
     for (const {args, flags} of domain.cases()) {
       examined++;

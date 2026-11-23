@@ -21,6 +21,7 @@ jobs:
       - run: npm run pilot -- build/pilot
       - run: npm run pilot:support -- build/support
       - run: npm run pilot:batch -- build/batch
+      - run: npm run pilot:components -- build/components
       - run: npm run release:check -- build/distribution
       - uses: actions/upload-artifact@v4
         with:
@@ -35,3 +36,4 @@ jobs:
             build/pilot/
             build/support/
             build/batch/
+            build/components/

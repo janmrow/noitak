@@ -1,4 +1,4 @@
-import { cardinality, domainOf } from './domain.mjs';
+import { cardinality, domainOf, productSize, sizeLabel, exceeds } from './domain.mjs';
 import { crosscheck } from './crosscheck.mjs';
 import { execute } from './runtime.mjs';
 import { refinement } from './refinement.mjs';
@@ -22,9 +22,9 @@ function compareBodies(old, next) {
 
 function compareField(old, next, field, context) {
   const {configuration, proven, types} = context;
-  const domain = domainOf(old).total * (field === 'ensures' ? cardinality(old.output) : 1n);
+  const domain = productSize(domainOf(old).total, field === 'ensures' ? cardinality(old.output) : 1n);
   const symbolic = usesSymbolic(configuration, domain);
-  const evidence = { method: symbolic ? 'symbolic' : 'enumerate', comparisonDomain: String(domain),
+  const evidence = { method: symbolic ? 'symbolic' : 'enumerate', comparisonDomain: sizeLabel(domain),
     parameters: old.params.map(([name]) => name) };
   if (old.capacity && next.capacity) evidence.scope = 'one-transition';
   const unresolved = reason => ({ ...evidence, status: 'undetermined', reason });
@@ -39,7 +39,7 @@ function compareField(old, next, field, context) {
     const result = solveRelation(old, next, types, field);
     return { ...evidence, ...crosscheck(result, domain, limit, enumerate, 'undetermined') };
   }
-  if (domain > BigInt(limit)) return unresolved('comparison-budget');
+  if (exceeds(domain, limit)) return unresolved('comparison-budget');
   return { ...evidence, ...enumerate() };
 }
 
@@ -57,7 +57,12 @@ export function compare(oldUnit, newUnit, before, after) {
   const newTypes = new Map(newUnit.types.map(e => [e.name, e]));
   for (const name of new Set([...oldTypes.keys(), ...newTypes.keys()])) {
     const old = oldTypes.get(name), next = newTypes.get(name);
-    if (!equal(old, next)) record(name, (old ?? next).element ? 'sequence' : (old ?? next).fields ? 'record' : 'enum', old ? 'risky' : 'compatible', old ?? null, next ?? null);
+    if (equal(old, next)) continue;
+    const layout = old ?? next;
+    const field = layout.element ? 'sequence' : layout.fields ? 'record' : 'enum';
+    const expansion = old?.element && next?.element && next.capacity > old.capacity;
+    const status = expansion ? 'policy-violation' : old ? 'risky' : 'compatible';
+    record(name, field, status, old ?? null, next ?? null);
   }
   // A shared solver sort is sound only when a name denotes the same type in both revisions.
   const typeConflict = [...oldTypes.values()].some(e => newTypes.has(e.name) && !equal(e, newTypes.get(e.name)));
@@ -117,7 +122,7 @@ export function compare(oldUnit, newUnit, before, after) {
       changes.push({ subject: c.function, field, status: 'policy-violation',
         property: c.property, reason: c.reason ?? c.status, proofDomain: c.domain, proofStatus: c.status, counterexample: c.counterexample });
   }
-  return { schema: 6, toolVersion: after.toolVersion, configuration: after.configuration,
+  return { schema: 8, toolVersion: after.toolVersion, configuration: after.configuration,
     before, after,
     changes, passed: before.passed && after.passed && changes.every(c => c.status === 'compatible') };
 }

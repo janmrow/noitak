@@ -19,6 +19,12 @@ function emitFrame(id, frame, targets) {
     const [op,a,b,c] = expr;
     const run = e => emit(e,scope);
     switch (op) {
+      case 'text-length': return '(' + run(a) + ').length';
+      case 'starts-with': return '(' + run(a) + ').startsWith(' + run(b) + ')';
+      case 'ends-with': return '(' + run(a) + ').endsWith(' + run(b) + ')';
+      case 'contains': return '(' + run(a) + ').includes(' + run(b) + ')';
+      case 'strip-prefix': return 'stripPrefix(' + run(a) + ', ' + run(b) + ')';
+      case 'text':
       case 'u32':
       case 'uuid': return literal(a);
       case 'widen': return run(a);
@@ -56,6 +62,7 @@ function emitFrame(id, frame, targets) {
       }
       case 'items': return '[' + b.map(run).join(', ') + ']';
       case 'length': return '(' + run(a) + ').length';
+      case 'member': return 'hasMember(' + run(a) + ', ' + run(b) + ')';
       case 'fold': {
         const items = fresh(), acc = fresh(), index = fresh();
         const inner = new Map(scope).set(c[0],acc).set(c[1],items+'['+index+']').set(c[2],index);

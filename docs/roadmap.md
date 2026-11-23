@@ -1,5 +1,11 @@
 # Noitak roadmap
 
+## Recommendation after 0.8
+
+Prioritize verified collection transformations. The webhook now accepts a nested envelope with 128 labels. Membership has a native sequence proof. Replacing that one operation with an equivalent fold left the large-capacity proof open. A consumer that needs to filter or project matching deliveries still constructs the output list in the host. The current source language can construct a fixed list literal and reduce to a state, but cannot directly return a filtered list of arbitrary admitted length. [0.8 experiment](release-0.8.md)
+
+Start the next milestone with a batch of webhook deliveries and an order-preserving filter or projection. Specify its output bound, element contract and failure order. Prove preservation of the bound and the element guarantee compositionally. Exercise the deployed artifact against an independent ordered model, and gate changes that reorder or drop jobs. Measure proof cost as capacity grows. The host can continue interpreting the resulting jobs and enforcing queue authorization. This workload gives a concrete test before introducing external effects.
+
 ## 0.7 disposition
 
 Checked JavaScript lowering and typed record readers moved IR dispatch and lexical maps out of the shipping artifact. The verifier retains its interpreter. The gate tests the emitted module in a separate worker and records comparison coverage. The metering and tenant workloads now run several times faster, with a measurable increase in bundle creation time. [0.7 evidence](release-0.7.md)

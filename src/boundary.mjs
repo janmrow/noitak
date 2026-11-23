@@ -14,6 +14,7 @@ export class CallFault extends Error {
 export const error = (code, phase) => ({ ok: false, code, phase });
 
 export function argument(type, value, readers) {
+  if (type === 'text') return typeof value === 'string' && value.length <= 1024 ? value : undefined;
   if (type === 'bool') return typeof value === 'boolean' ? value : undefined;
   if (type === 'uuid') return typeof value === 'string' && value.length === 36 &&
     /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value) ? value : undefined;

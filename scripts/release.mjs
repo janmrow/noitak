@@ -69,6 +69,20 @@ try {
   const smoke = execFileSync(process.execPath,['--disallow-code-generation-from-strings','demo.mjs'],
     {cwd:deployment,encoding:'utf8',env:{PATH:''}});
   console.log('Standalone metering consumer passed.',smoke.trim());
+  const topics = join(host,'node_modules/noitak/pilot/topics');
+  const topicSource = join(topics,'topics.noi');
+  const vectors = join(topics,'vectors.json');
+  const policy = JSON.parse(run(cli,['gate',topicSource,topicSource,'topics/verified',
+    '--engine','auto','--vectors',vectors,'--json'],host));
+  assert.equal(policy.artifactValidation.vectorsSha256, createHash('sha256').update(readFileSync(vectors)).digest('hex'));
+  assert.ok(policy.artifactValidation.checks[0].admittedBodies > 0);
+  copyFileSync(join(topics,'service.mts'),join(host,'topics/service.mts'));
+  run(process.execPath,[join(root,'node_modules/typescript/bin/tsc'),'--strict','--module','nodenext','topics/service.mts'],host);
+  const {mayRead} = await import(pathToFileURL(join(host,'topics/service.mjs')));
+  for (const v of JSON.parse(readFileSync(vectors))) {
+    assert.equal(mayRead(...v.args,v.flags.system_topics),v.expected.ok && v.expected.value.tag === 'allow');
+  }
+  console.log('Installed text policy, vector digest and strict TypeScript caller passed.');
   writeFileSync(join(staged,'SHA256SUMS'),digest+'  '+basename(archive)+'\n');
   await publishDirectory(staged,output);
   console.log('Installed CLI, packaged solver, gated bundle and host call passed.');

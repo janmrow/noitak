@@ -4,15 +4,15 @@ import { Worker } from 'node:worker_threads';
 
 export class ArtifactMismatch extends Error {
   constructor(witness) {
-    super('Generated module disagrees with the reference interpreter or its required safety proof');
+    super('Generated module failed a reference, safety or application comparison');
     this.detail = {code:'E_ARTIFACT_MISMATCH',message:this.message,...witness};
   }
 }
 
-export async function checkArtifact(unit, source, timeoutMs = 30000) {
+export async function checkArtifact(unit, source, timeoutMs = 30000, witnesses = new Map(), vectors = []) {
   const entries = unit.functions.filter(f=>f.kind==='fn');
   const worker = new Worker(new URL('./artifact-worker.mjs',import.meta.url), {
-    workerData:{entries,source}, execArgv:[]
+    workerData:{entries,source,witnesses,vectors}, execArgv:[]
   });
   let timedOut = false;
   const timer = setTimeout(()=>{
@@ -31,9 +31,12 @@ export async function checkArtifact(unit, source, timeoutMs = 30000) {
         const checks = reply?.checks;
         if (!Array.isArray(checks) || checks.length !== entries.length ||
             !checks.every((c,i)=>c.function === entries[i].name && Number.isSafeInteger(c.cases) &&
-              c.cases > 0 && Number.isSafeInteger(c.returned) && c.returned >= 0 && c.returned <= c.cases))
+              c.cases > 0 && Number.isSafeInteger(c.returned) && c.returned >= 0 && c.returned <= c.cases &&
+              Number.isSafeInteger(c.admittedBodies) && c.admittedBodies >= 0 && c.admittedBodies <= c.returned &&
+              c.status === (c.admittedBodies ? 'tested' : 'incomplete')))
           return reject(new Error('Invalid artifact comparison report'));
-        resolve({status:'tested', method:'interpreter-differential-v1', timeoutMs, checks});
+        const status = checks.every(c => c.status === 'tested') ? 'tested' : 'incomplete';
+        resolve({status, method:'interpreter-differential-v2', timeoutMs, checks});
       });
     });
   } finally { clearTimeout(timer); }

@@ -18,11 +18,17 @@ test('artifact evidence counts admitted executions separately from boundary and 
     (reducer run ((s bool) (x bool)) bool (reads enable) (capacity 2)
       (invariant (flag enable)) (ensures true) x))`);
   const report = await checkArtifact(module,await emitModule(module));
-  assert.equal(report.status,'tested');
-  assert.deepEqual(report.checks,[
-    {function:'rare',scope:'function-host-calls',domainPositions:64,cases:65,returned:0},
-    {function:'run',scope:'reducer-host-calls',domainPositions:8,cases:14,returned:6}
+  assert.equal(report.status,'incomplete');
+  assert.deepEqual(report.checks.map(c => [c.function,c.status,c.cases,c.returned,c.admittedBodies]), [
+    ['rare','incomplete',65,0,0], ['run','tested',14,6,5]
   ]);
+  const witnesses = new Map([['rare',{flags:{},args:[7]}]]);
+  const checked = await checkArtifact(module,await emitModule(module),30000,witnesses);
+  assert.equal(checked.status,'tested');
+  assert.equal(checked.checks[0].admittedBodies,1);
+  const wrong = (await emitModule(module)).replace('body: (args, flags) => true','body: (args, flags) => false');
+  await assert.rejects(checkArtifact(module,wrong,30000,witnesses), e =>
+    e.detail?.function === 'rare' && e.detail.args[0] === 7);
 });
 
 test('extra module exports, worker failure and timeout all refuse artifact validation',async ()=>{

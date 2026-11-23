@@ -6,6 +6,15 @@ function evaluate(expr, env, flags, graph) {
   const [op, a, b, c] = expr;
   const run = e => evaluate(e, env, flags, graph);
   switch (op) {
+    case 'text-length': return run(a).length;
+    case 'starts-with': return run(a).startsWith(run(b));
+    case 'ends-with': return run(a).endsWith(run(b));
+    case 'contains': return run(a).includes(run(b));
+    case 'strip-prefix': {
+      const value = run(a), prefix = run(b);
+      return value.startsWith(prefix) ? value.slice(prefix.length) : value;
+    }
+    case 'text':
     case 'uuid':
     case 'u32': return a;
     case 'widen': return run(a);
@@ -20,6 +29,10 @@ function evaluate(expr, env, flags, graph) {
     case 'get': return run(a)[b];
     case 'items': return b.map(run);
     case 'length': return run(a).length;
+    case 'member': {
+      const values = run(a), item = run(b);
+      return values.some(value => equalValue(value,item));
+    }
     case 'fold': {
       const values = run(a);
       let acc = run(b);

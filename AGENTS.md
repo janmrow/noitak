@@ -23,6 +23,7 @@ npm run test:symbolic
 npm run pilot -- build/pilot
 npm run pilot:support -- build/support
 npm run pilot:batch -- build/batch
+npm run pilot:components -- build/components
 npm run release:check -- build/distribution
 ```
 

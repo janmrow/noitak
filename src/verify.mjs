@@ -1,24 +1,25 @@
 import { createHash } from 'node:crypto';
-import { domainOf } from './domain.mjs';
+import { domainOf, sizeLabel, exceeds } from './domain.mjs';
 import { execute } from './runtime.mjs';
 import { solve, symbolicConfig, usesSymbolic } from './symbolic.mjs';
 import { checkIndependence } from './independence.mjs';
 import { crosscheck, CROSSCHECK_LIMIT } from './crosscheck.mjs';
 
-export const VERSION = '0.7.0';
+export const VERSION = '0.8.0';
 export const DEFAULT_LIMIT = 65536;
 export const hash = data => createHash('sha256').update(data).digest('hex');
 
 function obligation(f, limit) {
   const { total, cases } = domainOf(f);
   const result = { function: f.name, loc: f.loc, property: 'admissible-and-safe',
-    domain: total.toString(), examined: 0, admitted: 0 };
-  if (total > BigInt(limit)) return { ...result, status: 'unverified', reason: 'case-budget' };
+    domain: sizeLabel(total), examined: 0, admitted: 0 };
+  if (exceeds(total, limit)) return { ...result, status: 'unverified', reason: total === null ? 'symbolic-text-domain' : 'case-budget' };
   for (const { args, flags } of cases()) {
     const outcome = execute(f, args, flags);
     result.examined++;
     if (outcome.code === 'PRECONDITION') continue;
     if (outcome.phase !== 'requires') result.admitted++;
+    if (outcome.ok) result.admissionWitness ??= {args, flags:Object.fromEntries(flags)};
     if (!outcome.ok) return { ...result, status: 'violated',
       counterexample: { args, flags: Object.fromEntries(flags), outcome } };
   }
@@ -44,7 +45,7 @@ export function verify(unit, source, limit, engine = 'enumerate') {
     const symbolic = usesSymbolic(configuration, domain);
     const audit = (answer, enumerate) => crosscheck(answer, domain, limit, enumerate, 'unverified');
     const identity = { function: f.name, visibility: f.kind === 'helper' ? 'private' : f.kind === 'imported' ? 'imported' : 'public',
-      loc: f.loc, method: symbolic ? 'symbolic' : 'enumerate', domain: String(domain) };
+      loc: f.loc, method: symbolic ? 'symbolic' : 'enumerate', domain: sizeLabel(domain) };
     const finiteSafety = () => obligation(f, limit);
     const safety = symbolic ? audit(solve(f, types), finiteSafety) : finiteSafety();
     const results = [{ ...identity, property: 'admissible-and-safe', ...safety }];
@@ -61,13 +62,17 @@ export function verify(unit, source, limit, engine = 'enumerate') {
       let flow = { status: 'unverified', reason: 'missing-function-proof' };
       if (safety.status === 'proven') {
         const finiteFlow = () => checkIndependence(f, types, limit, false);
-        flow = symbolic ? audit(checkIndependence(f, types, limit, true), finiteFlow) : finiteFlow();
+        if (symbolic && f.independent.every(key => !f.referencedParams.includes(key))) {
+          // Checked calls have closed frames. A parameter absent from all three
+          // expressions cannot affect a callee except via an explicit argument.
+          flow = audit({status:'proven', method:'parameter-nonoccurrence'}, finiteFlow);
+        } else flow = symbolic ? audit(checkIndependence(f, types, limit, true), finiteFlow) : finiteFlow();
       }
       results.push({ ...identity, property: 'observable-independence', parameters: f.independent, ...flow });
     }
     return results;
   });
-  return { schema: 5, toolVersion: VERSION, module: unit.name, version: unit.version,
+  return { schema: 7, toolVersion: VERSION, module: unit.name, version: unit.version,
     sourceSha256: hash(source), dependencies: unit.dependencies ?? {}, configuration,
     calls: Object.fromEntries(unit.functions.map(f => [f.name, f.calls])),
     permissions: Object.fromEntries(unit.functions.map(f => [f.name, f.reads])),

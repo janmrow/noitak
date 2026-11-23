@@ -1,8 +1,19 @@
-# Noitak 0.7
+# Noitak 0.8
 
 Noitak aims to become a practical programming language for software built primarily by AI agents, where safety, verifiable guarantees, and change control are first-class parts of programming. Today it compiles pure, contracted components into standalone JavaScript with TypeScript declarations. [Project philosophy](docs/philosophy.md)
 
-Version 0.7 emits checked JavaScript expressions and loops for deployment. Build and gate run the emitted module against the reference interpreter before publishing a bundle. The manifest identifies the exact ESM and declarations and reports how many comparison calls returned a value. [Evidence and limitations](docs/verification.md)
+Version 0.8 handles nested request envelopes, optional structured payloads, text and collections of up to 255 elements. The webhook component turns branch pushes into typed CI jobs. The topic policy enforces tenant, grant and protected-prefix checks in an ordinary TypeScript service. Build and gate execute a concrete admitted input for every export and can require application-owned expected outcomes. [Release evidence and trade-offs](docs/release-0.8.md)
+
+## Run the 0.8 workloads
+
+With Node 22, npm dependencies and the pinned Python environment installed as below, run the comparison from the checkout. Each destination must be fresh.
+
+```sh
+npm run pilot:components -- build/components
+node noitak.mjs build pilot/events/events.noi build/dispatch --engine auto --vectors pilot/events/vectors.json
+```
+
+Import `api.dispatch_push` from `build/dispatch/module.mjs`. Pass a repository, a tagged change, and up to 128 labels in the delivery argument, followed by a trace string. A deleted branch returns an ignored decision. An admitted branch push returns a typed job whose urgency follows label membership. Applications supply their own webhook authentication and scheduling. The comparison writes `comparison.json`, both generated components, strict TypeScript consumers and two refused policy reviews. [Delivery examples](pilot/events/vectors.json) · [Topic service](pilot/topics/service.mts)
 
 ## Use a component in TypeScript
 
@@ -22,7 +33,7 @@ In a TypeScript application, install the checked tarball as a dev dependency. Pl
 
 ```sh
 sha256sum --check SHA256SUMS
-npm install --save-dev ./noitak-0.7.0.tgz
+npm install --save-dev ./noitak-0.8.0.tgz
 python -m pip install -r node_modules/noitak/requirements-symbolic.txt
 npx --no-install noitak verify node_modules/noitak/pilot/metering/metering.noi --engine auto
 npx --no-install noitak build node_modules/noitak/pilot/metering/metering.noi meter/verified --engine auto
@@ -38,7 +49,7 @@ Import `MeterStore` from `./meter/service.mjs` or call `api.reconcile(flags, acc
 npx --no-install noitak gate baseline/metering.noi candidate/metering.noi next/verified --engine auto
 ```
 
-The release check installs the package offline, makes a real implementation edit, gates it and runs a strict TypeScript consumer against the approved bytes. Read the assessment for timings, security assumptions and migration details. [0.7 engineering assessment](docs/release-0.7.md)
+The release check installs the package offline, makes a real implementation edit, gates it and runs a strict TypeScript consumer against the approved bytes. Read the assessment for timings, security assumptions and migration details. [0.8 engineering assessment](docs/release-0.8.md)
 
 ## Run the support workflow
 
@@ -181,7 +192,7 @@ The inventory module has 16,777,216 possible inputs. Z3 checks whether any input
 | diff OLD NEW | Both revisions pass verification and all findings are compatible |
 | gate OLD NEW NEW_DIR | The comparison passes and the candidate bundle is written |
 
-The original `node noi.mjs` entry point remains available for existing scripts. Append `--json` for a single machine-readable JSON object on stdout. Verification and comparison accept `--limit N` (1 through 1,000,000 per function). Exit 0 means the requested command succeeded, 1 indicates a source diagnostic, failed test, blocked proof or change requiring review, and 2 indicates an invocation, I/O, data-format or tool error. CI should require exit 0 and consume output from that invocation. Source diagnostics include a stable code, file and one-based line and column. Success of check is only static acceptance.
+The original `node noi.mjs` entry point remains available for existing scripts. Append `--json` for a single machine-readable JSON object on stdout. Build and gate additionally accept `--vectors FILE` to require application cases against the artifact. Verification and comparison accept `--limit N` (1 through 1,000,000 per function). Exit 0 means the requested command succeeded, 1 indicates a source diagnostic, failed test, blocked proof or change requiring review, and 2 indicates an invocation, I/O, data-format or tool error. CI should require exit 0 and consume output from that invocation. Source diagnostics include a stable code, file and one-based line and column. Success of check is only static acceptance.
 
 ## Scope
 

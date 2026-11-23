@@ -19,7 +19,7 @@ function name(node) {
   return node.atom;
 }
 
-const scalars = ['byte', 'bool', 'u32', 'uuid'];
+const scalars = ['byte', 'bool', 'u32', 'uuid', 'text'];
 
 function type(node, types) {
   if (scalars.includes(node.atom)) return node.atom;
@@ -27,7 +27,7 @@ function type(node, types) {
   fail(node, 'E_TYPE', 'Unknown type: ' + node.atom);
 }
 
-function enumeration(node) {
+function enumeration(node, types) {
   const [id, ...entries] = form(node, 'enum');
   if (!entries.length) fail(node, 'E_FORM', 'Expected a type name and one or more variants');
   const key = name(id);
@@ -35,14 +35,14 @@ function enumeration(node) {
   const tags = new Map();
   for (const entry of entries) {
     const fields = list(entry);
-    if (![1, 2].includes(fields.length)) fail(entry, 'E_FORM', 'Expected (tag) or (tag scalar-type)');
-    bind(tags, fields[0], fields[1] ? type(fields[1], new Map()) : null);
+    if (![1, 2].includes(fields.length)) fail(entry, 'E_FORM', 'Expected (tag) or (tag type)');
+    bind(tags, fields[0], fields[1] ? type(fields[1], types) : null);
   }
   const variants = [...tags.keys()].sort().map(tag => ({ tag, payload: tags.get(tag) }));
   return { name: key, variants };
 }
 
-function recordType(node, enums) {
+function recordType(node, types) {
   const [id, ...entries] = form(node, 'record');
   if (!entries.length) fail(node, 'E_FORM', 'Expected a record with named fields');
   const key = name(id);
@@ -50,8 +50,8 @@ function recordType(node, enums) {
   const fields = new Map();
   for (const entry of entries) {
     const parts = list(entry);
-    if (parts.length !== 2) fail(entry, 'E_FORM', 'Expected (field scalar-or-enum-type)');
-    bind(fields, parts[0], type(parts[1], enums));
+    if (parts.length !== 2) fail(entry, 'E_FORM', 'Expected (field type)');
+    bind(fields, parts[0], type(parts[1], types));
   }
   return { name: key, fields: [...fields] };
 }
@@ -76,6 +76,21 @@ function snapshotSize(t) {
   return t.variants.reduce((size, v) => Math.max(size, v.payload ? 1 + snapshotSize(v.payload) : 1), 1);
 }
 
+// Bound expanded wire layouts, including every selector used to constrain a
+// symbolic sequence. Memoization keeps repeated type references cheap to check.
+const layoutSizes = new WeakMap();
+function checkLayout(node, t) {
+  const children = t.fields?.map(([,field]) => field) ??
+    (t.element ? [t.element] : t.variants.map(v => v.payload).filter(Boolean));
+  const sizes = children.map(child => layoutSizes.get(child) ?? {nodes:1, depth:0});
+  let copies = t.success ? 2 : 1;
+  if (t.element) copies = t.capacity <= 8 ? t.capacity * (t.capacity + 1) / 2 : t.capacity;
+  const nodes = 1 + (t.variants?.length ?? 0) + copies * sizes.reduce((sum, s) => sum + s.nodes, 0);
+  const depth = sizes.reduce((max, s) => Math.max(max, s.depth + 1), 1);
+  if (nodes > 16384 || depth > 32) fail(node, 'E_LIMIT', 'Expanded type layout exceeds limit');
+  layoutSizes.set(t, {nodes, depth});
+}
+
 const arities = new Map(Object.entries({
   let: 3, if: 3, flag: 1, not: 1, and: 2, or: 2, '+': 2, '-': 2, '<': 2, '<=': 2, '=': 2
 }));
@@ -86,6 +101,10 @@ function expression(node, env, context, depth = 1) {
   budget.depth = Math.max(budget.depth, depth);
   const { reads, types, helpers } = context;
   const check = (expr, scope = env) => expression(expr, scope, context, depth + 1);
+  if (node.text !== undefined) {
+    if (node.text.length > 1024) fail(node, 'E_LIMIT', 'Text exceeds 1024 UTF-16 code units');
+    return ['text', ['text', node.text]];
+  }
   if (node.atom !== undefined) {
     const s = node.atom;
     if (['true', 'false'].includes(s)) return ['bool', s === 'true'];
@@ -99,10 +118,21 @@ function expression(node, env, context, depth = 1) {
       return ['u32', ['u32', value]];
     }
     if (!env.has(s)) fail(node, 'E_NAME', 'Unknown value: ' + s);
+    context.references.add(s);
     return [env.get(s), s];
   }
   const [head, ...args] = list(node);
   const op = head?.atom;
+  if (['starts-with', 'ends-with', 'contains', 'strip-prefix', 'text-length'].includes(op)) {
+    if (args.length !== (op === 'text-length' ? 1 : 2)) fail(node, 'E_FORM', 'Incorrect text operation arity');
+    const values = args.map(arg => {
+      const [actual, value] = check(arg);
+      expect(arg, actual, 'text');
+      return value;
+    });
+    const result = op === 'text-length' ? 'u32' : op === 'strip-prefix' ? 'text' : 'bool';
+    return [result, [op, ...values]];
+  }
   if (op === 'uuid') {
     const value = args[0]?.atom;
     if (args.length !== 1 || value?.length !== 36 ||
@@ -128,11 +158,17 @@ function expression(node, env, context, depth = 1) {
     });
     return [sequence, ['items', sequence.name, values]];
   }
-  if (op === 'length' || op === 'fold') {
-    if (args.length !== (op === 'length' ? 1 : 4)) fail(node, 'E_FORM', 'Incorrect sequence operation arity');
+  if (op === 'length' || op === 'member' || op === 'fold') {
+    if (args.length !== {length:1, member:2, fold:4}[op]) fail(node, 'E_FORM', 'Incorrect sequence operation arity');
     const [sequence, value] = check(args[0]);
     if (!sequence.element) fail(args[0], 'E_TYPE', 'Expected a sequence');
     if (op === 'length') return ['byte', ['length', value]];
+    if (op === 'member') {
+      const [actual, item] = check(args[1]);
+      expect(args[1], actual, sequence.element);
+      budget.work += sequence.capacity;
+      return ['bool', ['member', value, item]];
+    }
     const [acc, initial] = check(args[1]);
     const scope = new Map(env);
     const binders = list(args[2]);
@@ -302,10 +338,10 @@ function fn(node, types, helpers, prefix) {
       if (!env.has(key)) fail(item, 'E_NAME', 'Unknown independent parameter: ' + key);
     }
   }
-  const calls = new Set();
+  const calls = new Set(), references = new Set();
   const budget = { work: 0, depth: 0 };
   const checked = (expr, scope, t, callable, depth = 1) => {
-    const [actual, ir] = expression(expr, scope, { reads, types, helpers: callable, calls, budget }, depth);
+    const [actual, ir] = expression(expr, scope, { reads, types, helpers: callable, calls, references, budget }, depth);
     expect(expr, actual, t);
     return ir;
   };
@@ -316,10 +352,12 @@ function fn(node, types, helpers, prefix) {
   // Rebind the state name to the next state. The invariant was checked without the item.
   const ensures = reducer ? ['and', ['let', params[0][0], 'result', requires], guarantee] : guarantee;
   if (reducer) budget.work += invariantWork + 3;
+  const bodyIR = checked(body, env, output, helpers);
   return { name: prefix + name(id), kind: reducer ? 'fn' : kind, ...(reducer ? {capacity} : {}),
     params, output, reads, independent: [...protectedParams.keys()].sort(),
     requires, ensures,
-    body: checked(body, env, output, helpers), calls: [...calls].sort(), budget, loc: id.loc };
+    referencedParams: params.map(([key]) => key).filter(key => references.has(key)),
+    body: bodyIR, calls: [...calls].sort(), budget, loc: id.loc };
 }
 
 export function importsOf(root) {
@@ -353,29 +391,47 @@ export function compileModule(root, dependencies, prefix = '') {
   }
   const localTypes = [], localFunctions = [];
   const tag = node => node.items?.[0]?.atom;
-  function declare(node, t) {
-    bind(types, node.items[1], t);
-    t.name = prefix + t.name;
-    localTypes.push(t);
-    allTypes.set(t.name,t);
+  const kinds = new Set(['enum', 'record', 'sequence', 'outcome']);
+  const definitions = new Map();
+  for (const node of defs.filter(n => kinds.has(tag(n)))) {
+    if (!node.items[1]) fail(node, 'E_FORM', 'Missing type name');
+    bind(definitions, node.items[1], node);
   }
-  for (const node of defs.filter(n => tag(n) === 'enum')) declare(node, enumeration(node));
-  const enums = new Map([...types].filter(([,t]) => t.variants && !t.success));
-  for (const node of defs.filter(n => tag(n) === 'record')) declare(node, recordType(node, enums));
-  for (const node of defs.filter(n => tag(n) === 'sequence' || tag(n) === 'outcome')) {
+  const active = new Set();
+  const lookup = {
+    has: key => types.has(key) || definitions.has(key),
+    get: resolveType
+  };
+  function resolveType(key) {
+    if (types.has(key)) return types.get(key);
+    const node = definitions.get(key);
+    if (active.has(key)) fail(node, 'E_TYPE', 'Recursive type: ' + key);
+    if (active.size >= 32) fail(node, 'E_LIMIT', 'Type nesting exceeds 32');
+    if (scalars.includes(key)) fail(node, 'E_TYPE', 'Cannot redefine a scalar type');
+    active.add(key);
+    let t;
     const kind = tag(node);
-    const [id, item, size] = form(node, kind, kind === 'sequence' ? 4 : 3);
-    const key = name(id), element = type(item, types);
-    if (scalars.includes(key) || element.element || element.success)
-      fail(node, 'E_TYPE', 'Expected a new name and scalar, enum or record element type');
-    if (kind === 'sequence') {
-      if (!/^[1-8]$/.test(size.atom ?? '')) fail(size, 'E_LIMIT', 'Sequence capacity must be 1 through 8');
-      declare(node, {name:key, element, capacity:Number(size.atom)});
-    } else {
-      declare(node, {name:key, success:element, variants:[{tag:'committed',payload:element}, {tag:'rejected',payload:'byte'}]});
+    if (kind === 'enum') t = enumeration(node, lookup);
+    else if (kind === 'record') t = recordType(node, lookup);
+    else {
+      const [, item, size] = form(node, kind, kind === 'sequence' ? 4 : 3);
+      const element = type(item, lookup);
+      if (kind === 'sequence') {
+        if (!/^[1-9][0-9]*$/.test(size.atom ?? '') || Number(size.atom) > 255)
+          fail(size, 'E_LIMIT', 'Sequence capacity must be 1 through 255');
+        t = {element, capacity:Number(size.atom)};
+      } else t = {success:element, variants:[{tag:'committed',payload:element}, {tag:'rejected',payload:'byte'}]};
     }
+    t.name = prefix + key;
+    checkLayout(node, t);
+    active.delete(key);
+    types.set(key, t);
+    localTypes.push(t);
+    allTypes.set(t.name, t);
+    return t;
   }
-  for (const node of defs.filter(n => !['import','enum','record','sequence','outcome'].includes(tag(n)))) {
+  for (const key of definitions.keys()) resolveType(key);
+  for (const node of defs.filter(n => tag(n) !== 'import' && !kinds.has(tag(n)))) {
     const f = fn(node, types, helpers, prefix);
     const local = bind(seen, node.items[1], f);
     if (f.budget.work > 16384 || f.budget.depth > 192) fail(node, 'E_LIMIT', 'Expression work or depth exceeds limit');

@@ -20,7 +20,9 @@ class Term:
 class Encoding:
     def __init__(self, types):
         self.sorts = {"byte": z3.BitVecSort(8), "bool": z3.BoolSort(),
-                      "u32": z3.BitVecSort(32), "uuid": z3.BitVecSort(128)}
+                      "u32": z3.BitVecSort(32), "uuid": z3.BitVecSort(128),
+                      "text": z3.SeqSort(z3.BitVecSort(16))}
+        self.bounded_types = {"text"}
         self.variants = {}
         self.summaries = {}
         self.record_fields = {}
@@ -32,14 +34,19 @@ class Encoding:
         if isinstance(typ, str) or typ["name"] in self.sorts:
             return
         if "element" in typ:
-            self.declare(typ["element"])
+            children = [typ["element"]]
         elif "fields" in typ:
-            for _, field in typ["fields"]:
-                self.declare(field)
+            children = [field for _, field in typ["fields"]]
         else:
-            for variant in typ["variants"]:
-                if variant["payload"]:
-                    self.declare(variant["payload"])
+            children = [v["payload"] for v in typ["variants"] if v["payload"]]
+        for child in children:
+            self.declare(child)
+            if (child if isinstance(child, str) else child["name"]) in self.bounded_types:
+                self.bounded_types.add(typ["name"])
+        if typ.get("capacity", 0) > 8:
+            self.sorts[typ["name"]] = z3.SeqSort(self.sort(typ["element"]))
+            self.bounded_types.add(typ["name"])
+            return
         index = len(self.sorts)
         datatype = z3.Datatype(f"D{index}")
         if "element" in typ:
@@ -64,6 +71,8 @@ class Encoding:
 
     def length(self, value):
         sort = value.sort()
+        if sort.kind() == z3.Z3_SEQ_SORT:
+            return z3.Int2BV(z3.Length(value), 8)
         length = z3.BitVecVal(0, 8)
         for n in range(1, self.capacities[sort.name()] + 1):
             length = z3.If(sort.recognizer(n)(value), z3.BitVecVal(n, 8), length)
@@ -74,6 +83,36 @@ class Encoding:
 
     def variable(self, symbol, typ):
         return Term(z3.Const(symbol, self.sort(typ)))
+
+    def bounds(self, value, typ):
+        """Guard bounds on native sequences and their active nested values."""
+        if typ == "text":
+            return [z3.Length(value) <= 1024]
+        if isinstance(typ, str) or typ["name"] not in self.bounded_types:
+            return []
+        sort = self.sort(typ)
+        if sort.kind() == z3.Z3_SEQ_SORT:
+            length = z3.Length(value)
+            constraints = [length <= typ["capacity"]]
+            index = z3.FreshInt()
+            inner = self.bounds(value[index], typ["element"])
+            if inner:
+                constraints.append(z3.ForAll(index, z3.Implies(z3.And(0 <= index, index < length), z3.And(*inner))))
+            return constraints
+        if "fields" in typ:
+            return [bound for i, (_, field) in enumerate(typ["fields"])
+                    for bound in self.bounds(sort.accessor(0, i)(value), field)]
+        if "element" in typ:
+            members = [[typ["element"]] * n for n in range(typ["capacity"] + 1)]
+        else:
+            members = [[v["payload"]] if v["payload"] else [] for v in typ["variants"]]
+        constraints = []
+        for i, fields in enumerate(members):
+            active = [bound for j, field in enumerate(fields)
+                      for bound in self.bounds(sort.accessor(i, j)(value), field)]
+            if active:
+                constraints.append(z3.Implies(sort.recognizer(i)(value), z3.And(*active)))
+        return constraints
 
     def call_terms(self, name, values, flags):
         # This request fixes types and flags. Baseline and candidate have distinct
@@ -108,6 +147,14 @@ class Encoding:
         def run(arg):
             return self.expression(arg, env, flags)
 
+        if op == "text":
+            raw = args[0].encode("utf-16-le", "surrogatepass")
+            units = [z3.Unit(z3.BitVecVal(int.from_bytes(raw[i:i+2], "little"), 16))
+                     for i in range(0, len(raw), 2)]
+            return Term(z3.Concat(z3.Empty(self.sort("text")), *units) if units else z3.Empty(self.sort("text")))
+        if op == "text-length":
+            term = run(args[0])
+            return Term(z3.Int2BV(z3.Length(term.value), 32), term.safe)
         if op == "u32":
             return Term(z3.BitVecVal(args[0], 32))
         if op == "uuid":
@@ -125,8 +172,25 @@ class Encoding:
         if op == "items":
             name, actuals = args
             values = [run(arg) for arg in actuals]
-            return Term(self.sorts[name].constructor(len(values))(*[v.value for v in values]),
-                        z3.And(*[v.safe for v in values]))
+            sort = self.sorts[name]
+            if sort.kind() == z3.Z3_SEQ_SORT:
+                seq = z3.Empty(sort)
+                for v in values:
+                    seq = z3.Concat(seq, z3.Unit(v.value))
+            else:
+                seq = sort.constructor(len(values))(*[v.value for v in values])
+            return Term(seq, z3.And(*[v.safe for v in values]))
+        if op == "member":
+            seq, item = [run(arg) for arg in args]
+            sort = seq.value.sort()
+            if sort.kind() == z3.Z3_SEQ_SORT:
+                found = z3.Contains(seq.value, z3.Unit(item.value))
+            else:
+                alternatives = [z3.And(sort.recognizer(n)(seq.value),
+                                z3.Or(*[sort.accessor(n, i)(seq.value) == item.value for i in range(n)]))
+                                for n in range(1, self.capacities[sort.name()] + 1)]
+                found = z3.Or(*alternatives)
+            return Term(found, z3.And(seq.safe, item.safe))
         if op == "length":
             seq = run(args[0])
             return Term(self.length(seq.value), seq.safe)
@@ -139,9 +203,12 @@ class Encoding:
             for i in range(capacity):
                 # Inactive selectors are unconstrained by Z3. Both the value and
                 # safety contribution of an inactive iteration are discarded.
-                item = sort.accessor(capacity, i)(seq.value)
-                for n in range(i + 1, capacity):
-                    item = z3.If(sort.recognizer(n)(seq.value), sort.accessor(n, i)(seq.value), item)
+                if sort.kind() == z3.Z3_SEQ_SORT:
+                    item = seq.value[i]
+                else:
+                    item = sort.accessor(capacity, i)(seq.value)
+                    for n in range(i + 1, capacity):
+                        item = z3.If(sort.recognizer(n)(seq.value), sort.accessor(n, i)(seq.value), item)
                 index = z3.BitVecVal(i, 8)
                 scope = {**env, names[0]: Term(acc.value), names[1]: Term(item), names[2]: Term(index)}
                 update = self.expression(step, scope, flags)
@@ -217,6 +284,24 @@ class Encoding:
         if op == "or":
             return Term(z3.Or(a, b), z3.And(left.safe, z3.Implies(z3.Not(a), right.safe)))
         safe = z3.And(left.safe, right.safe)
+        # Keep length comparisons in integer arithmetic. For every n,
+        # unsigned(int2bv(w,n)) = n mod 2**w, even outside the text domain.
+        if op in ("=", "<", "<=") and (a.decl().kind() == z3.Z3_OP_INT2BV or b.decl().kind() == z3.Z3_OP_INT2BV):
+            def unsigned_integer(term):
+                if term.decl().kind() == z3.Z3_OP_INT2BV:
+                    return term.arg(0) % (1 << term.size())
+                return z3.BV2Int(term)
+            x, y = unsigned_integer(a), unsigned_integer(b)
+            return Term(x == y if op == "=" else x < y if op == "<" else x <= y, safe)
+        if op == "starts-with":
+            return Term(z3.PrefixOf(b, a), safe)
+        if op == "ends-with":
+            return Term(z3.SuffixOf(b, a), safe)
+        if op == "contains":
+            return Term(z3.Contains(a, b), safe)
+        if op == "strip-prefix":
+            rest = z3.SubSeq(a, z3.Length(b), z3.Length(a) - z3.Length(b))
+            return Term(z3.If(z3.PrefixOf(b, a), rest, a), safe)
         if op in ("+", "u32+"):
             return Term(a + b, z3.And(safe, z3.UGE(a + b, a)))
         if op in ("-", "u32-"):
@@ -229,7 +314,23 @@ class Encoding:
             return Term(z3.ULT(a, b), safe)
         raise ValueError("Unsupported instruction")
 
+    @staticmethod
+    def sequence_units(value):
+        stack = [value]
+        while stack:
+            part = stack.pop()
+            kind = part.decl().kind()
+            if kind == z3.Z3_OP_SEQ_CONCAT:
+                stack.extend(reversed(part.children()))
+            elif kind == z3.Z3_OP_SEQ_UNIT:
+                yield part.arg(0)
+            elif kind != z3.Z3_OP_SEQ_EMPTY:
+                raise ValueError("Expected a concrete sequence model")
+
     def decode(self, value, typ):
+        if typ == "text":
+            data = b"".join(unit.as_long().to_bytes(2, "little") for unit in self.sequence_units(value))
+            return data.decode("utf-16-le", "surrogatepass")
         if typ == "uuid":
             return str(UUID(int=value.as_long()))
         if typ in ("byte", "u32"):
@@ -238,6 +339,8 @@ class Encoding:
             return z3.is_true(value)
         if "element" in typ:
             sort = self.sort(typ)
+            if sort.kind() == z3.Z3_SEQ_SORT:
+                return [self.decode(v, typ["element"]) for v in self.sequence_units(value)]
             n = next(i for i in range(typ["capacity"] + 1) if value.decl() == sort.constructor(i))
             return [self.decode(value.arg(i), typ["element"]) for i in range(n)]
         if "fields" in typ:
@@ -260,6 +363,8 @@ def setup(request):
     flags = {name: encoding.variable(f"g{i}", "bool") for i, name in enumerate(f["reads"])}
     solver = z3.Solver()
     solver.set(timeout=request["timeoutMs"], random_seed=0)
+    for name, typ in f["params"]:
+        solver.add(*encoding.bounds(env[name].value, typ))
     return f, encoding, env, flags, solver
 
 
@@ -291,7 +396,8 @@ def verify(request):
         return {"status": "unverified", "reason": solver.reason_unknown()}
     if admitted == z3.unsat:
         return {"status": "violated", "reason": "empty-admission-domain", "safety": "unsat", "admission": "unsat"}
-    return {"status": "proven", "safety": "unsat", "admission": "sat"}
+    return {"status": "proven", "safety": "unsat", "admission": "sat",
+            "witness": input_model(f, encoding, env, flags, solver.model())}
 
 
 def compare(request):
@@ -311,6 +417,7 @@ def compare(request):
         solver.add(z3.Not(admitted_new))
     elif field == "ensures":
         result = encoding.variable("hypothetical", old["output"])
+        solver.add(*encoding.bounds(result.value, old["output"]))
         scope = {**env, "result": result}
         solver.add(admitted_new, holds(new, field, scope), z3.Not(holds(old, field, scope)))
     elif field == "body":

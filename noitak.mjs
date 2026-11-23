@@ -10,7 +10,7 @@ import { testVectors } from './src/vectors.mjs';
 
 import { formatReview } from './src/review.mjs';
 
-const usage = 'noitak <check FILE | verify FILE | build FILE NEW_DIR | diff OLD NEW | gate OLD NEW NEW_DIR | test FILE VECTORS> [--json] [--limit N] [--engine enumerate|symbolic|auto]';
+const usage = 'noitak <check FILE | verify FILE | build FILE NEW_DIR | diff OLD NEW | gate OLD NEW NEW_DIR | test FILE VECTORS> [--json] [--vectors FILE (build/gate)] [--limit N] [--engine enumerate|symbolic|auto]';
 const argv = process.argv.slice(2);
 const json = argv.includes('--json');
 function print(data) {
@@ -34,8 +34,13 @@ async function main() {
   const positions = [];
   let limit = DEFAULT_LIMIT;
   let engine = 'enumerate';
+  let vectorPath;
   for (let i = 0; i < tokens.length; i++) {
     if (tokens[i] === '--limit') limit = Number(tokens[++i]);
+    else if (tokens[i] === '--vectors') {
+      if (!['build','gate'].includes(command) || vectorPath || !tokens[i+1] || tokens[i+1].startsWith('--')) throw new Error(usage);
+      vectorPath = tokens[++i];
+    }
     else if (tokens[i] === '--engine') {
       engine = tokens[++i];
       if (!['verify','diff','build','gate'].includes(command) || !['symbolic','enumerate','auto'].includes(engine))
@@ -50,6 +55,7 @@ async function main() {
     throw new Error(usage);
   const [path, other] = positions;
   const {unit, bytes} = await load(path);
+  const vectorBytes = vectorPath ? await readFile(vectorPath) : undefined;
   let report;
   if (command === 'check') report = { module: unit.name, status: 'typechecked', passed: true };
   else if (command === 'test') report = testVectors(unit, JSON.parse(await readFile(other, 'utf8')));
@@ -60,10 +66,10 @@ async function main() {
       const candidate = verify(newer.unit, newer.bytes, limit, engine);
       report = compare(unit, newer.unit, report, candidate);
       if (command === 'gate' && report.passed) {
-        const manifest = await build(newer.unit, candidate, positions[2], report);
+        const manifest = await build(newer.unit, candidate, positions[2], report, vectorBytes);
         report = { ...report, artifact: positions[2], artifactValidation: manifest.artifactValidation };
       }
-    } else if (command === 'build' && report.passed) report = await build(unit, report, other);
+    } else if (command === 'build' && report.passed) report = await build(unit, report, other, undefined, vectorBytes);
   }
   print(report);
   if (!report.passed) process.exitCode = 1;

@@ -1,6 +1,6 @@
 {
   "name": "noitak",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "license": "Apache-2.0",
   "private": true,
   "type": "module",
@@ -11,7 +11,8 @@
     "pilot:support": "node pilot/support/run.mjs",
     "demo": "node examples/demo.mjs",
     "pilot:batch": "node pilot/support/run-batch.mjs",
-    "release:check": "node scripts/release.mjs"
+    "release:check": "node scripts/release.mjs",
+    "pilot:components": "node pilot/topics/compare.mjs"
   },
   "engines": {
     "node": ">=22"
@@ -44,7 +45,14 @@
     "pilot/access/access.noi",
     "examples/quota.noi",
     "pilot/support/support.noi",
-    "pilot/support/batch.noi"
+    "pilot/support/batch.noi",
+    "docs/release-0.8.md",
+    "pilot/events/events.noi",
+    "pilot/events/vectors.json",
+    "pilot/topics/topics.noi",
+    "pilot/topics/vectors.json",
+    "pilot/topics/service.mts",
+    "pilot/topics/reference.mts"
   ],
   "repository": {
     "type": "git",

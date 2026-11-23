@@ -6,6 +6,8 @@ export function crosscheck(primary, domain, limit, enumerate, unresolved) {
   const budget = Math.min(limit, CROSSCHECK_LIMIT);
   if (primary.status === unresolved)
     return { ...primary, crosscheck: { status: 'skipped', reason: 'primary-unresolved' } };
+  if (domain === null)
+    return { ...primary, crosscheck: { status: 'skipped', reason: 'symbolic-text-domain' } };
   if (domain > BigInt(budget))
     return { ...primary, crosscheck: { status: 'skipped', reason: 'case-budget', limit: budget } };
   const reference = enumerate();

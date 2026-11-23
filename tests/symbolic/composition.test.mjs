@@ -104,9 +104,15 @@ test('independent integer oracle detects a false proof from a signed-order trans
   writeFileSync(join(dir,'bad.noi'), claim);
   const check = rejected(['build','bad.noi','artifact']).checks[0];
   assert.equal(check.status,'unverified');
-  assert.equal(check.reason,'engine-disagreement');
-  assert.equal(check.symbolicEvidence.status,'proven');
-  assert.equal(check.crosscheck.counterexample.args[0],0);
+  // The worker may choose a failing admitted input. Replay can now veto its
+  // spurious proof even before the independent enumeration audit.
+  if (check.reason === 'admission-replay-disagreement') {
+    assert.equal(check.crosscheck.reason,'primary-unresolved');
+  } else {
+    assert.equal(check.reason,'engine-disagreement');
+    assert.equal(check.symbolicEvidence.status,'proven');
+    assert.equal(check.crosscheck.counterexample.args[0],0);
+  }
 
   // The same mutation can also "prove" two individually safe bodies equal.
   const candidate = claim.replace('(ensures result)', '(ensures true)');

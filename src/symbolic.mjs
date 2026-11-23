@@ -2,10 +2,12 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { argument, invoke, predicate } from './runtime.mjs';
 
-export const symbolicConfig = { method: 'z3-bitvectors-datatypes-v4', timeoutMsPerQuery: 3000, timeoutMsPerWorker: 10000 };
+import { exceeds } from './domain.mjs';
+
+export const symbolicConfig = { method: 'z3-datatypes-sequences-v5', timeoutMsPerQuery: 3000, timeoutMsPerWorker: 10000 };
 export function usesSymbolic(configuration, domain) {
   return configuration.engine === 'symbolic' ||
-    (configuration.engine === 'auto' && domain > BigInt(configuration.maxCasesPerFunction));
+    (configuration.engine === 'auto' && exceeds(domain, configuration.maxCasesPerFunction));
 }
 
 const worker = fileURLToPath(new URL('./symbolic_worker.py', import.meta.url));
@@ -47,9 +49,13 @@ export function solve(f, types, spawn = spawnSync) {
   const answer = query({ function: f, types }, spawn);
   if (answer.status === 'unverified') return answer;
   const { solverVersion } = answer;
-  if (answer.status === 'proven' && hasFields(answer, 'status', 'solverVersion', 'safety', 'admission') &&
-      answer.safety === 'unsat' && answer.admission === 'sat')
-    return { status: 'proven', solverVersion, safety: 'unsat', admission: 'sat' };
+  if (answer.status === 'proven' && hasFields(answer, 'status', 'solverVersion', 'safety', 'admission', 'witness') && validModel(answer.witness) &&
+      answer.safety === 'unsat' && answer.admission === 'sat') {
+    const model = typedInput(f, answer.witness);
+    if (!model || !invokeTransition(f, model.flags, model.args).ok) return unknown('admission-replay-disagreement');
+    return { status: 'proven', solverVersion, safety: 'unsat', admission: 'sat',
+      admissionWitness: {args:model.args, flags:model.flags} };
+  }
   if (answer.status === 'violated') {
     if (hasFields(answer, 'status', 'solverVersion', 'reason', 'safety', 'admission') &&
         answer.reason === 'empty-admission-domain' && answer.safety === 'unsat' && answer.admission === 'unsat')

@@ -1,0 +1,146 @@
+[
+  {
+    "fn": "authorize",
+    "args": [
+      {
+        "actor": {
+          "tenant": "00000000-0000-0000-0000-000000000001",
+          "disabled": false,
+          "grant": {
+            "tag": "subtree",
+            "value": "feed/"
+          }
+        },
+        "topic": {
+          "key": "feed/build",
+          "tenant": "00000000-0000-0000-0000-000000000001"
+        }
+      },
+      "trace"
+    ],
+    "flags": {
+      "system_topics": false
+    },
+    "expected": {
+      "ok": true,
+      "value": {
+        "tag": "allow"
+      }
+    }
+  },
+  {
+    "fn": "authorize",
+    "args": [
+      {
+        "actor": {
+          "tenant": "00000000-0000-0000-0000-000000000001",
+          "disabled": false,
+          "grant": {
+            "tag": "subtree",
+            "value": "feed/"
+          }
+        },
+        "topic": {
+          "key": "feed/",
+          "tenant": "00000000-0000-0000-0000-000000000001"
+        }
+      },
+      "trace"
+    ],
+    "flags": {
+      "system_topics": true
+    },
+    "expected": {
+      "ok": true,
+      "value": {
+        "tag": "outside_scope"
+      }
+    }
+  },
+  {
+    "fn": "authorize",
+    "args": [
+      {
+        "actor": {
+          "tenant": "00000000-0000-0000-0000-000000000001",
+          "disabled": false,
+          "grant": {
+            "tag": "exact",
+            "value": "system/build"
+          }
+        },
+        "topic": {
+          "key": "system/build",
+          "tenant": "00000000-0000-0000-0000-000000000001"
+        }
+      },
+      "trace"
+    ],
+    "flags": {
+      "system_topics": false
+    },
+    "expected": {
+      "ok": true,
+      "value": {
+        "tag": "protected"
+      }
+    }
+  },
+  {
+    "fn": "authorize",
+    "args": [
+      {
+        "actor": {
+          "tenant": "00000000-0000-0000-0000-000000000001",
+          "disabled": false,
+          "grant": {
+            "tag": "exact",
+            "value": "system/build"
+          }
+        },
+        "topic": {
+          "key": "system/build",
+          "tenant": "00000000-0000-0000-0000-000000000001"
+        }
+      },
+      "trace"
+    ],
+    "flags": {
+      "system_topics": true
+    },
+    "expected": {
+      "ok": true,
+      "value": {
+        "tag": "allow"
+      }
+    }
+  },
+  {
+    "fn": "authorize",
+    "args": [
+      {
+        "actor": {
+          "tenant": "00000000-0000-0000-0000-000000000001",
+          "disabled": false,
+          "grant": {
+            "tag": "none"
+          }
+        },
+        "topic": {
+          "key": "",
+          "tenant": "00000000-0000-0000-0000-000000000001"
+        }
+      },
+      "trace"
+    ],
+    "flags": {
+      "system_topics": true
+    },
+    "expected": {
+      "ok": true,
+      "value": {
+        "tag": "unavailable"
+      }
+    }
+  }
+]

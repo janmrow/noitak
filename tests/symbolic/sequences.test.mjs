@@ -34,3 +34,33 @@ test('symbolic refinement quantifies over hypothetical sequences and replays an 
   assert.notDeepEqual(finding.witness.result,finding.witness.args[0]);
   assert.equal(finding.witness.result.length,finding.witness.args[0].length);
 });
+
+test('membership matches all 1023 sequences of up to nine bits across both encodings', () => {
+  for (const capacity of [3,9]) {
+    const source = `(module m 1.0.0 (sequence xs bool ${capacity})
+      (fn f ((s xs)) bool (reads) (requires true)
+        (ensures (= result (fold s false (seen bit i) (or seen bit))))
+        (member s true)))`;
+    const unit = compile(source), check = verify(unit,source,4096,'symbolic').checks[0];
+    assert.equal(check.status,'proven',JSON.stringify(check));
+    assert.equal(check.crosscheck.examined,2**(capacity+1)-1);
+  }
+});
+
+test('native sequence model decodes nested membership witnesses and enforces each nominal capacity', () => {
+  const source = `(module m 1.0.0 (record row (label text)) (sequence rows row 255)
+    (fn f ((s rows)) bool (reads) (requires (member s (make row (label "λ")))) (ensures result)
+      (not (member s (make row (label "λ"))))))`;
+  const check = verify(compile(source),source,1,'symbolic').checks[0];
+  assert.equal(check.status,'violated',JSON.stringify(check));
+  assert.ok(check.counterexample.args[0].some(r=>r.label==='λ'));
+  assert.equal(check.counterexample.outcome.code,'POSTCONDITION');
+  const two = `(module m 1.0.0 (sequence short bool 9) (sequence long bool 255)
+    (fn f ((a short) (b long)) byte (reads) (requires true)
+      (ensures (<= (length a) 9)) (length b)))`;
+  const a=compile(two), after=two.replace('bool 9','bool 10').replace('(length a) 9','(length a) 10');
+  const b=compile(after), pa=verify(a,two,1,'symbolic'), pb=verify(b,after,1,'symbolic');
+  assert.ok(pa.passed && pb.passed);
+  const diff=compare(a,b,pa,pb);
+  assert.ok(diff.changes.some(c=>c.field==='sequence' && c.status==='policy-violation'));
+});

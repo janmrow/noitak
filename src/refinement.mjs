@@ -1,4 +1,4 @@
-import { domainOf, cardinality, valueAt } from './domain.mjs';
+import { domainOf, cardinality, valueAt, productSize, sizeLabel, exceeds } from './domain.mjs';
 import { predicate } from './runtime.mjs';
 
 // Old callers retain admission. Every result allowed by the candidate on a
@@ -6,9 +6,9 @@ import { predicate } from './runtime.mjs';
 export function refinement(old, next, field, limit) {
   const domain = domainOf(old);
   const results = field === 'ensures' ? cardinality(old.output) : 1n;
-  const cost = domain.total * results;
-  if (cost > BigInt(limit))
-    return { status: 'undetermined', reason: 'comparison-budget', comparisonDomain: String(cost) };
+  const cost = productSize(domain.total, results);
+  if (exceeds(cost, limit))
+    return { status: 'undetermined', reason: 'comparison-budget', comparisonDomain: sizeLabel(cost) };
   let examined = 0;
   for (const {args, flags} of domain.cases()) {
     const admitted = predicate(old, 'requires', args, flags);
@@ -30,5 +30,5 @@ export function refinement(old, next, field, limit) {
       }
     }
   }
-  return { status: 'compatible', examined, comparisonDomain: String(cost) };
+  return { status: 'compatible', examined, comparisonDomain: sizeLabel(cost) };
 }

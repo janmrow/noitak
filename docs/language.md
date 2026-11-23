@@ -1,12 +1,12 @@
-# Noitak 0.6
+# Noitak 0.8
 
-A source file holds one module. Forms are parenthesized, whitespace separates atoms, and a semicolon starts a line comment. LF, CRLF and CR each end one line. Positions count UTF-16 code units from one. Declaration order inside a function is fixed.
+A source file holds one module. Forms are parenthesized, whitespace separates atoms, and a semicolon outside a quoted literal starts a line comment. LF, CRLF and CR each end one line. Positions count UTF-16 code units from one. Declaration order inside a function is fixed.
 
 ```text
 (module ID MAJOR.MINOR.PATCH
   (import MODULE SHA256) ...
-  (enum ID (TAG [SCALAR]) ...) ...
-  (record ID (FIELD SCALAR-OR-ENUM) ...) ...
+  (enum ID (TAG [TYPE]) ...) ...
+  (record ID (FIELD TYPE) ...) ...
   (sequence ID ELEMENT CAPACITY) ...
   (outcome ID SUCCESS-TYPE) ...
   (reducer ID ((STATE S) (ITEM E)) S (reads ID ...) (capacity N)
@@ -19,11 +19,11 @@ A source file holds one module. Forms are parenthesized, whitespace separates at
     EXPR) ...)
 ```
 
-The `fn` declaration exports a host entry point. A `helper` is private to the module. Names match `[a-z][a-z0-9_]*`. The value names true, false and result are reserved in declarations. Numbers and version components are unsigned decimal without redundant leading zeroes. Scalar types are byte (0 through 255), u32 (0 through 4,294,967,295), bool and uuid. Parameter order defines the positional host interface. Each function has its own variable environment. Duplicate declarations and local shadowing are errors.
+The `fn` declaration exports a host entry point. A `helper` is private to the module. Names match `[a-z][a-z0-9_]*`. The value names true, false and result are reserved in declarations. Numbers and version components are unsigned decimal without redundant leading zeroes. Scalar types are byte (0 through 255), u32 (0 through 4,294,967,295), bool, uuid and text. Parameter order defines the positional host interface. Each function has its own variable environment. Duplicate declarations and local shadowing are errors.
 
 | Expression | Typing and evaluation |
 | --- | --- |
-| literal or variable | Byte and u32 literals, booleans and immutable lexical bindings |
+| literal or variable | Byte, u32, text and boolean literals, or immutable lexical bindings |
 | `(let x e body)` | Evaluate e once, bind its type and value in body |
 | `(if c a b)` | c is bool, arms have equal types, evaluate only the selected arm |
 | `(+ a b)`, `(- a b)` | Equal integer operand types, checked result of the same type. Out-of-range arithmetic faults |
@@ -59,15 +59,15 @@ Lists nest up to 128 levels. A module must have at least one public function. Pa
 
 ## Finite tagged types
 
-A module may declare `(enum name (tag) (other byte) ...)` anywhere among its functions. Each distinct variant has zero or one scalar payload. Enum names are nominal and occupy a separate type namespace. All declarations generate public TypeScript aliases named Enum_name.
+A module may declare `(enum name (tag) (other byte) ...)` anywhere among its functions. Each distinct variant has zero or one typed payload. Enum names are nominal and occupy a separate type namespace. All declarations generate public TypeScript aliases named Enum_name.
 
 Construct a value with `(tag name tag)` or `(tag name other expr)`. For subject type T, `(match subject (tag expr) (other x expr) ...)` must cover each variant of T exactly once. A payload binder is local to its arm and follows the ordinary no-shadowing rule. Arm result types must agree. Evaluate the subject once and evaluate only the selected arm. Equality compares tag and payload within a single nominal type.
 
-The domain size is the sum of the variant sizes. A nullary variant contributes one. Enumeration uses lexical tag order, then scalar payload order. At the JS boundary, values use a discriminated union such as `{tag:"pending"} | {tag:"received",value:number}`. Required fields must be own data properties. The boundary copies these fields, validates the payload and discards extra fields. See examples/delivery.noi for an acknowledgment that preserves an already recorded sequence number.
+The domain size is the sum of the variant sizes. A nullary variant contributes one. Enumeration uses lexical tag order, then payload order on enumerated domains. At the JS boundary, values use a discriminated union such as `{tag:"pending"} | {tag:"received",value:number}`. Required fields must be own data properties. The boundary copies these fields, validates the payload and discards extra fields. See examples/delivery.noi for an acknowledgment that preserves an already recorded sequence number.
 
 ## Records
 
-`(record ticket (stage stage) (revision byte))` declares a nominal, immutable product. Field names are distinct. Fields can have scalar or enum type. Enum declarations are resolved before records, independent of source order. Both use the same type namespace. Fields can contain ordinary enums with scalar payloads.
+`(record ticket (stage stage) (revision byte))` declares a nominal, immutable product. Field names are distinct. Fields, payloads, sequence elements and outcome successes can use any resolved type, including a directly imported qualified type. Forward type references are legal. All nominal types share a namespace. The compiler rejects cycles, nesting deeper than 32 declarations and expanded layout cost above 16,384 per type. This bounds duplication through repeated children and the selectors needed by the symbolic encoding. Function call order retains its separate earlier-helper rule.
 
 `(make ticket (stage s) (revision n))` evaluates each initializer once, left to right. Supply every field exactly once in declaration order. `(get ticket_value revision)` projects a field. Equality compares every field recursively. The first declared field varies fastest during enumeration. Multiplying field cardinalities yields the exact domain size.
 
@@ -95,7 +95,7 @@ Each source revision loads at most 64 regular source files of up to 1 MiB each. 
 
 ## Bounded sequences and recoverable admission (0.5)
 
-`(sequence events action 3)` declares immutable ordered values of length zero through three. Capacities are integer literals 1 through 8. Elements may be scalars, ordinary enums or records. `(items events a b)` constructs a sequence and `(length xs)` returns a byte. Equality compares length, order and every element. JavaScript supplies dense arrays of own typed data properties. The boundary checks capacity before copying elements. TypeScript exposes `ReadonlyArray` and runtime enforces its length.
+`(sequence events action 3)` declares immutable ordered values of length zero through three. Capacities are integer literals from 1 through 255. `(items events a b)` constructs a sequence and `(length xs)` returns a byte. Equality compares length, order and every element. JavaScript supplies dense arrays of own typed data properties. The boundary checks capacity before copying elements. TypeScript exposes `ReadonlyArray` and runtime enforces its length. `(member xs item)` evaluates both operands once in order, including the item for an empty sequence. It returns a boolean using structural equality. Its static work estimate charges the declared capacity.
 
 `(fold xs initial (acc item index) expression)` evaluates the sequence and initial value once, then evaluates the expression from left to right for each present element. The accumulator and step have the same type. Indices are zero-based bytes. An empty sequence returns the initial value. The maximum step count is the declared capacity. Folds may appear in contracts. Function calls remain restricted to bodies.
 
@@ -123,3 +123,15 @@ Call `api.parity({}, initialState, flips)` with a dense array. The second declar
 Entry validates and copies the initial state and the entire array, then snapshots grants once. A malformed tail yields ARGUMENT even after a row that would cause a business rejection. Entry checks the initial invariant, including for empty arrays. A false initial invariant yields PRECONDITION. In input order, each step checks admission, computes the next state and checks the invariant there and the explicit step guarantee. A false exit check yields POSTCONDITION. The empty array returns a fresh value equal to the admitted initial state. A business rejection can be represented in the state and retained by later steps. The host decides whether to commit.
 
 Capacity is a literal from 1 through 65,535. The compiler limits (capacity + 1) times conservative step work to 4,000,000 and the initial state plus a maximum-length input to 1,000,000 language values. Snapshot size counts each scalar or compound value once and uses the largest alternative of a tagged type. These are structural bounds. Host trap execution, allocation size and wall-clock time depend on the runtime.
+
+## Text
+
+`text` is a primitive immutable sequence of zero through 1,024 UTF-16 code units. Quoted source literals use JSON string syntax. Whitespace, parentheses and semicolons inside a literal are data. The JS boundary accepts primitive strings within the limit. Boxed strings, coercions and overlong values fail with ARGUMENT. The source limit produces E_LIMIT. A supplementary character occupies two units. Lone surrogates are representable. Equality is exact and case-sensitive. The host owns normalization, locale, grapheme boundaries and application-specific identifier rules.
+
+| Expression | Result |
+| --- | --- |
+| `(text-length s)` | u32 code-unit count |
+| `(starts-with s p)`, `(ends-with s p)`, `(contains s p)` | bool for exact prefix, suffix or contiguous subsequence |
+| `(strip-prefix s p)` | The suffix after one matching prefix, otherwise the original text |
+
+The empty pattern matches at both ends and within every string. Removing it preserves the input. All operations are total on valid values and evaluate operands in order. Stripping can only shorten a value. An application requiring missing text can declare `(enum optional_text (missing) (present text))`. Missing required JS fields are boundary errors, and an explicit missing tag is a value the program can handle.

@@ -1,0 +1,242 @@
+[
+  {
+    "fn": "dispatch_push",
+    "args": [
+      {
+        "repository": {
+          "slug": "payments",
+          "archived": false
+        },
+        "change": {
+          "tag": "push",
+          "value": {
+            "deleted": false,
+            "ref": {
+              "tag": "present",
+              "value": "refs/heads/release/λ"
+            }
+          }
+        },
+        "labels": [
+          "qa",
+          "ci:urgent"
+        ]
+      },
+      "verified upstream"
+    ],
+    "flags": {},
+    "expected": {
+      "ok": true,
+      "value": {
+        "tag": "queue",
+        "value": {
+          "repository": "payments",
+          "branch": "release/λ",
+          "urgent": true
+        }
+      }
+    }
+  },
+  {
+    "fn": "dispatch_push",
+    "args": [
+      {
+        "repository": {
+          "slug": "payments",
+          "archived": false
+        },
+        "change": {
+          "tag": "push",
+          "value": {
+            "deleted": false,
+            "ref": {
+              "tag": "present",
+              "value": "refs/heads/"
+            }
+          }
+        },
+        "labels": []
+      },
+      "verified upstream"
+    ],
+    "flags": {},
+    "expected": {
+      "ok": true,
+      "value": {
+        "tag": "invalid"
+      }
+    }
+  },
+  {
+    "fn": "dispatch_push",
+    "args": [
+      {
+        "repository": {
+          "slug": "payments",
+          "archived": false
+        },
+        "change": {
+          "tag": "push",
+          "value": {
+            "deleted": false,
+            "ref": {
+              "tag": "missing"
+            }
+          }
+        },
+        "labels": []
+      },
+      "verified upstream"
+    ],
+    "flags": {},
+    "expected": {
+      "ok": true,
+      "value": {
+        "tag": "invalid"
+      }
+    }
+  },
+  {
+    "fn": "dispatch_push",
+    "args": [
+      {
+        "repository": {
+          "slug": "payments",
+          "archived": false
+        },
+        "change": {
+          "tag": "push",
+          "value": {
+            "deleted": false,
+            "ref": {
+              "tag": "present",
+              "value": "refs/tags/v1"
+            }
+          }
+        },
+        "labels": []
+      },
+      "verified upstream"
+    ],
+    "flags": {},
+    "expected": {
+      "ok": true,
+      "value": {
+        "tag": "ignored"
+      }
+    }
+  },
+  {
+    "fn": "dispatch_push",
+    "args": [
+      {
+        "repository": {
+          "slug": "payments",
+          "archived": true
+        },
+        "change": {
+          "tag": "push",
+          "value": {
+            "deleted": false,
+            "ref": {
+              "tag": "present",
+              "value": "refs/heads/main"
+            }
+          }
+        },
+        "labels": []
+      },
+      "verified upstream"
+    ],
+    "flags": {},
+    "expected": {
+      "ok": true,
+      "value": {
+        "tag": "ignored"
+      }
+    }
+  },
+  {
+    "fn": "dispatch_push",
+    "args": [
+      {
+        "repository": {
+          "slug": "payments",
+          "archived": false
+        },
+        "change": {
+          "tag": "push",
+          "value": {
+            "deleted": true,
+            "ref": {
+              "tag": "present",
+              "value": "refs/heads/main"
+            }
+          }
+        },
+        "labels": []
+      },
+      "verified upstream"
+    ],
+    "flags": {},
+    "expected": {
+      "ok": true,
+      "value": {
+        "tag": "ignored"
+      }
+    }
+  },
+  {
+    "fn": "dispatch_push",
+    "args": [
+      {
+        "repository": {
+          "slug": "payments",
+          "archived": false
+        },
+        "change": {
+          "tag": "push",
+          "value": {
+            "deleted": false,
+            "ref": {
+              "tag": "present",
+              "value": "refs/heads/main"
+            }
+          }
+        },
+        "labels": ["qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "qa", "ci:urgent"]
+      },
+      "verified upstream"
+    ],
+    "flags": {},
+    "expected": {
+      "ok": true,
+      "value": {
+        "tag": "queue",
+        "value": {
+          "repository": "payments",
+          "branch": "main",
+          "urgent": true
+        }
+      }
+    }
+  },
+  {
+    "fn": "dispatch_push",
+    "args": [
+      {
+        "change": {
+          "tag": "other"
+        },
+        "labels": []
+      },
+      ""
+    ],
+    "flags": {},
+    "expected": {
+      "ok": false,
+      "code": "ARGUMENT",
+      "phase": "boundary"
+    }
+  }
+]

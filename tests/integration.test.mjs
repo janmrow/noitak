@@ -211,3 +211,20 @@ test('wide reducer gate with an exhausted enumeration budget or unavailable auto
     assert.equal(existsSync(target),false);
   }
 });
+
+test('external artifact expectations bind exact bytes and veto an otherwise compatible gate', t => {
+  const dir = temporary(t), vectors = join(dir,'cases.json'), out = join(dir,'dist');
+  const cases = [{fn:'remaining',args:[5,2],flags:{},expected:{ok:true,value:4}}];
+  writeFileSync(vectors,JSON.stringify(cases));
+  const args = ['gate',good,good,out,'--vectors',vectors];
+  const {diagnostic} = cli(args,2);
+  assert.equal(diagnostic.origin,'application-vector');
+  assert.deepEqual(diagnostic.reference,{ok:true,value:3});
+  assert.equal(existsSync(out),false);
+  cases[0].expected.value = 3;
+  writeFileSync(vectors,JSON.stringify(cases)+'\n');
+  const review = cli(args);
+  assert.equal(review.artifactValidation.vectorsSha256,sha(vectors));
+  assert.equal(review.artifactValidation.checks[0].applicationCases,1);
+  assert.deepEqual(review.artifactValidation,JSON.parse(readFileSync(join(out,'review.json'))).artifactValidation);
+});

@@ -4,7 +4,7 @@ import { checkArtifact } from './artifact-check.mjs';
 import { emitModule } from './emitter.mjs';
 import { hash } from './verify.mjs';
 
-const scalarTypes = {byte: 'number', u32: 'number', bool: 'boolean', uuid: 'string'};
+const scalarTypes = {byte: 'number', u32: 'number', bool: 'boolean', uuid: 'string', text: 'string'};
 
 function ts(t) {
   if (typeof t === 'string') return scalarTypes[t];
@@ -55,7 +55,7 @@ export async function publishDirectory(staged, target) {
   }
 }
 
-export async function build(unit, report, destination, review) {
+export async function build(unit, report, destination, review, vectorBytes) {
   if (!report.passed) throw new Error('Required proof failed');
   const js = await emitModule(unit);
   const types = declarations(unit);
@@ -67,7 +67,13 @@ export async function build(unit, report, destination, review) {
     await lstat(target);
     throw new Error('Build destination already exists: ' + target);
   } catch (e) { if (e.code !== 'ENOENT') throw e; }
-  const artifactValidation = await checkArtifact(unit, js);
+  const witnesses = new Map(report.checks.filter(c => c.property === 'admissible-and-safe')
+    .map(c => [c.function, c.admissionWitness]));
+  const vectors = vectorBytes ? JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(vectorBytes)) : [];
+  if (!Array.isArray(vectors) || (vectorBytes && !vectors.length)) throw new Error('Expected nonempty application vector array');
+  const artifactValidation = await checkArtifact(unit, js, 30000, witnesses, vectors);
+  if (artifactValidation.status !== 'tested') throw new Error('Incomplete admitted artifact coverage');
+  if (vectorBytes) artifactValidation.vectorsSha256 = hash(vectorBytes);
   if (review) files.set('review.json', JSON.stringify({...review, artifactValidation}, null, 2) + '\n');
   const artifacts = Object.fromEntries([...files].map(([name, content]) => [name, hash(content)]));
   const manifest = { ...report, backend: 'checked-js-v1', artifacts, artifactValidation };

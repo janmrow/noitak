@@ -36,3 +36,12 @@ function runCompiled(entry, values, flags) {
     throw e;
   }
 }
+
+function stripPrefix(value, prefix) {
+  return value.indexOf(prefix) === 0 ? value.substring(prefix.length) : value;
+}
+
+function hasMember(values, item) {
+  for (const value of values) if (equalValue(value, item)) return true;
+  return false;
+}
