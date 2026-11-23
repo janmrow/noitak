@@ -1,14 +1,28 @@
-# Noitak 0.4
+# Noitak 0.5
 
 Noitak compiles verified, finite state transitions and projections into standalone JavaScript modules with TypeScript declarations. A module can consume a structured snapshot, call contracted helpers and return a new value. A change gate checks admission, guarantees, observed returns and authority before publishing a candidate. [Project philosophy](docs/philosophy.md)
 
-| Capability | 0.3 | 0.4 |
+## Use 0.5 in an application
+
+A module can import a pinned transition library, process a bounded sequence and return either the final state or the first rejected index. The compiler checks the batch contract, explicit authority and any declared independence of the result. The host owns persistence. [Batch source](pilot/support/batch.noi) · [TypeScript caller](pilot/support/batch-service.mts)
+
+The distribution is an npm-format tarball for use as a pinned build dependency. In the directory containing the release assets, check their digest. From a host project, install the tarball and run its local command:
+
+```sh
+sha256sum --check SHA256SUMS
+npm install --save-dev ./noitak-0.5.0.tgz
+./node_modules/.bin/noitak --version
+./node_modules/.bin/noitak build node_modules/noitak/examples/quota.noi build/quota
+```
+
+Ship the generated ESM to the application. Generated modules need neither Noitak nor a solver at runtime. For a change-controlled deployment use `gate BASELINE CANDIDATE NEW_DIR` and consume the bundle only on exit zero. For symbolic verification install the pinned Python dependency in the build environment. [Installation, supported use and release evidence](docs/release-0.5.md)
+
+| Capability | 0.4 | 0.5 |
 | --- | --- | --- |
-| Data | Bytes, booleans, tagged scalar payloads | Adds nominal immutable records with scalar or enum fields |
-| Composition | Independent public functions | Public entries and private, acyclic helper calls with checked contracts and transitive reads |
-| Information flow | Declared boolean reads | Adds verified independence of admission and returned data from named parameters |
-| Evidence | Enumeration or Z3, counterexample replay | Adds automatic finite cross-checks of small symbolic claims, including change comparisons |
-| Review | Public contracts, implementations and grants | Includes reachable helper edits, private grants, record layouts and independence promises |
+| Composition | Private helpers embedded at call sites | Linked call frames and digest-pinned public imports |
+| Data and control flow | Records, tagged values and branches | Bounded sequences, indexed folds and typed outcomes |
+| Failure | False nested admission faults a strict caller | An attempted call can return a typed rejection and index |
+| Change review | Contracts, returns, reads and independence within a module | Adds dependency digests and relational checks across reachable module calls |
 
 ## Run the support workflow
 
@@ -22,9 +36,12 @@ python -m pip install -r requirements-symbolic.txt
 npm test
 npm run test:symbolic
 npm run pilot:support -- build/support
+npm run pilot:batch -- build/batch
 ```
 
-The pilot gates three revisions, compiles a strict TypeScript ticket service against the accepted bundle and processes four events. The rejected candidates alter a public revision on a private note and expose a staff escalation bit in a customer response. Each decision has a JSON report. The pilot requires a fresh output directory. [Workflow and evidence](pilot/support/README.md)
+The single-event pilot gates three revisions, compiles a strict TypeScript ticket service against the accepted bundle and processes four events. The rejected candidates alter a public revision on a private note and expose a staff escalation bit in a customer response. Each decision has a JSON report. The pilot requires a fresh output directory. [Workflow and evidence](pilot/support/README.md)
+
+The batch pilot accepts one imported rewrite and refuses five candidate changes. It checks all 261,120 event-batch outcomes against an independent host model.
 
 With Node alone you can enumerate the baseline and run five host-boundary vectors:
 
@@ -159,7 +176,7 @@ The proof covers execution on the declared finite domains and assumes the compil
 - [Proof evidence, comparison rules and trusted components](docs/verification.md)
 - [Implementation architecture](docs/architecture.md)
 - [Verification-first design](docs/philosophy.md)
-- [Proposed 0.5 milestone](docs/roadmap.md)
+- [Roadmap and milestone disposition](docs/roadmap.md)
 
 ## License
 

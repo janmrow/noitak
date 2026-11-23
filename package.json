@@ -1,6 +1,6 @@
 {
   "name": "noitak",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "license": "Apache-2.0",
   "private": true,
   "type": "module",
@@ -10,12 +10,34 @@
     "pilot": "node pilot/delivery/run.mjs",
     "pilot:support": "node pilot/support/run.mjs",
     "demo": "node examples/demo.mjs",
-    "pilot:batch": "node pilot/support/run-batch.mjs"
+    "pilot:batch": "node pilot/support/run-batch.mjs",
+    "release:check": "node scripts/release.mjs"
   },
   "engines": {
     "node": ">=22"
   },
   "devDependencies": {
     "typescript": "5.9.3"
+  },
+  "description": "Verification-first compiler for bounded state transitions and event batches",
+  "bin": {
+    "noitak": "noitak.mjs"
+  },
+  "files": [
+    "noitak.mjs",
+    "noi.mjs",
+    "src/*.mjs",
+    "src/symbolic_worker.py",
+    "requirements-symbolic.txt",
+    "docs/language.md",
+    "docs/verification.md",
+    "docs/release-0.5.md",
+    "examples/quota.noi",
+    "pilot/support/support.noi",
+    "pilot/support/batch.noi"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/janmrow/noitak.git"
   }
 }

@@ -150,7 +150,7 @@ function expression(node, env, context, depth = 1) {
       index = ir;
     }
     const target = helpers?.get(args[0]?.atom);
-    if (!target) fail(node, 'E_CALL', 'Calls in bodies must name a previously declared helper');
+    if (!target) fail(node, 'E_CALL', 'Calls in bodies require an earlier local helper or a directly imported public function');
     if (args.length !== target.params.length + 1) fail(node, 'E_FORM', 'Incorrect call arity');
     for (const grant of target.reads)
       if (!reads.includes(grant)) fail(node, 'E_EFFECT', 'Call requires undeclared flag: ' + grant);

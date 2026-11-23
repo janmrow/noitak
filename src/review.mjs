@@ -16,7 +16,7 @@ export function formatReview(report) {
       lines.push(`Method: ${c.method}. Potential cases: ${c.comparisonDomain}`);
       if (c.field === 'body') {
         const calls = new Set([...(report.before.calls?.[c.subject] ?? []), ...(report.after.calls?.[c.subject] ?? [])]);
-        if (calls.size) lines.push('Direct helper calls: ' + [...calls].join(', '));
+        if (calls.size) lines.push('Direct calls: ' + [...calls].join(', '));
       }
       if (c.solverAnswer) lines.push(`Counterexample query: ${c.solverAnswer} (Z3 ${c.solverVersion})`);
       if (c.examined !== undefined) lines.push('Predicate comparisons: ' + c.examined);

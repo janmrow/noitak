@@ -5,7 +5,7 @@ import { solve, symbolicConfig } from './symbolic.mjs';
 import { checkIndependence } from './independence.mjs';
 import { crosscheck, CROSSCHECK_LIMIT } from './crosscheck.mjs';
 
-export const VERSION = '0.4.0';
+export const VERSION = '0.5.0';
 export const DEFAULT_LIMIT = 65536;
 export const hash = data => createHash('sha256').update(data).digest('hex');
 
@@ -52,8 +52,8 @@ export function verify(unit, source, limit, engine = 'enumerate') {
   });
   const configuration = symbolic ?
     { ...symbolicConfig, crosscheckMaxCases: Math.min(limit, CROSSCHECK_LIMIT) } :
-    { method: 'finite-enumeration-v2' };
-  return { schema: 3, toolVersion: VERSION, module: unit.name, version: unit.version,
+    { method: 'finite-enumeration-v3' };
+  return { schema: 4, toolVersion: VERSION, module: unit.name, version: unit.version,
     sourceSha256: hash(source), dependencies: unit.dependencies ?? {}, configuration: { ...configuration, maxCasesPerFunction: limit },
     calls: Object.fromEntries(unit.functions.map(f => [f.name, f.calls])),
     permissions: Object.fromEntries(unit.functions.map(f => [f.name, f.reads])),

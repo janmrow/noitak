@@ -110,7 +110,7 @@ export function compare(oldUnit, newUnit, before, after) {
       changes.push({ subject: c.function, field, status: 'policy-violation',
         property: c.property, reason: c.reason ?? c.status, proofDomain: c.domain, proofStatus: c.status, counterexample: c.counterexample });
   }
-  return { schema: 4, toolVersion: after.toolVersion, configuration: after.configuration,
+  return { schema: 5, toolVersion: after.toolVersion, configuration: after.configuration,
     before, after,
     changes, passed: before.passed && after.passed && changes.every(c => c.status === 'compatible') };
 }

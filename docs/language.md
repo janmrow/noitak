@@ -1,11 +1,14 @@
-# Noitak 0.4
+# Noitak 0.5
 
 A source file holds one module. Forms are parenthesized, whitespace separates atoms, and a semicolon starts a line comment. LF, CRLF and CR each end one line. Positions count UTF-16 code units from one. Declaration order inside a function is fixed.
 
 ```text
 (module ID MAJOR.MINOR.PATCH
+  (import MODULE SHA256) ...
   (enum ID (TAG [SCALAR]) ...) ...
   (record ID (FIELD SCALAR-OR-ENUM) ...) ...
+  (sequence ID ELEMENT CAPACITY) ...
+  (outcome ID SUCCESS-TYPE) ...
   (fn|helper ID ((ID TYPE) ...) TYPE
     (reads ID ...)
     [(independent PARAM ...)]
@@ -27,7 +30,7 @@ The `fn` declaration exports a host entry point. A `helper` is private to the mo
 | `(not a)`, `(and a b)`, `(or a b)` | Bool operands and result, short-circuit binary operators |
 | `(flag name)` | Bool from the declared named read capability |
 
-Strict operands evaluate left to right. Calls are acyclic. There are no loops, mutable storage or implicit conversions. The type rule for a conditional is Γ ⊢ c : bool, Γ ⊢ a : T, Γ ⊢ b : T ⇒ Γ ⊢ (if c a b) : T.
+Strict operands evaluate left to right. Calls are acyclic. Repetition uses bounded folds. Bindings are immutable and all conversions are explicit. The type rule for a conditional is Γ ⊢ c : bool, Γ ⊢ a : T, Γ ⊢ b : T ⇒ Γ ⊢ (if c a b) : T.
 
 Each call receives arguments and a snapshot of the authorized boolean flags. Both contracts must type as bool. The precondition sees parameters and flags. The postcondition also sees the normal return value as `result`. A false precondition rejects the call. A fault in a contract is a failure. After an admitted call the body must return normally and its postcondition must hold. The public result is a tagged union carrying either a value or an error code. See the generated declarations for the boundary types.
 
@@ -60,7 +63,7 @@ The domain size is the sum of the variant sizes. A nullary variant contributes o
 
 ## Records
 
-`(record ticket (stage stage) (revision byte))` declares a nominal, immutable product. Field names are distinct. Fields can have scalar or enum type. Enum declarations are resolved before records, independent of source order. Both use the same type namespace. A record cannot contain another record in 0.4.
+`(record ticket (stage stage) (revision byte))` declares a nominal, immutable product. Field names are distinct. Fields can have scalar or enum type. Enum declarations are resolved before records, independent of source order. Both use the same type namespace. Fields can contain ordinary enums with scalar payloads.
 
 `(make ticket (stage s) (revision n))` evaluates each initializer once, left to right. Supply every field exactly once in declaration order. `(get ticket_value revision)` projects a field. Equality compares every field recursively. The first declared field varies fastest during enumeration. Multiplying field cardinalities yields the exact domain size.
 
@@ -68,11 +71,11 @@ Generated TypeScript exposes `Record_ticket` with readonly fields. JavaScript ca
 
 ## Contracted calls
 
-`(call helper_name arg ...)` is legal in a function or helper body. Its target must be a previously declared helper in the same module. Arguments evaluate once from left to right, including unused arguments. The callee gets a fresh parameter environment and can read only its own declared grants from the original entry snapshot. Each caller must declare every read required by each direct callee, even in an unreachable branch. This rule propagates authority requirements through the whole call chain.
+`(call helper_name arg ...)` is legal in a function or helper body. Its target must be a previously declared local helper or a directly imported public function. Arguments evaluate once from left to right, including unused arguments. The callee gets a fresh parameter environment and can read only its own declared grants from the original entry snapshot. Each caller must declare every read required by each direct callee, even in an unreachable branch. This rule propagates authority requirements through the whole call chain.
 
 A call checks the callee precondition, computes the body, then checks the callee postcondition against that value. A false inner precondition is a caller fault, which invalidates a proof for an admitted public input. Checked arithmetic propagates to the outer execution phase. Contracts use ordinary expressions without calls so their meaning stays independent of helper implementations.
 
-Each lowered body is limited to 16,384 IR nodes (arrays and leaves) and 192 nested IR edges, counting a helper's embedded contracts and body at each call site. The checker reports `E_LIMIT` before verification for excessive expansion. Source lists retain their separate depth limit of 128.
+The checker budgets up to 16,384 expression evaluations and 192 levels of expression depth per function, including contracts. Each call charges the callee cost, and each fold charges its step at the maximum length. All branches are counted conservatively. Excessive cost produces `E_LIMIT` before verification. This bounds expression steps, while structural operations on values also depend on value size. Source lists retain their separate depth limit of 128.
 
 ## Observable independence
 
@@ -84,7 +87,7 @@ Type checking resolves the parameter names. Verification establishes the propert
 
 `(import ledger SHA256)` names a sibling file `ledger.noi`. The pin is the lowercase SHA-256 of its exact UTF-8 source bytes. Its module declaration must name `ledger`. Imported types and public functions are qualified, for example `ledger.ticket` and `(call ledger.transition prior event)`. Local declarations keep their ordinary names. Transitive dependencies must be pinned by their direct importer. Each module identity resolves to one snapshot per revision. The entry API exports only its own functions.
 
-Each CLI invocation loads at most 64 regular source files of up to 1 MiB each. Import names follow identifier syntax and imported files cannot be symbolic links. The verifier rechecks the linked dependencies. Each artifact records the root digest, dependency digests and call edges. The change gate compares imported public contracts and behavior as well as the root's observable results.
+Each source revision loads at most 64 regular source files of up to 1 MiB each. Import names follow identifier syntax and imported files cannot be symbolic links. The verifier rechecks the linked dependencies. Each artifact records the root digest, dependency digests and call edges. The change gate compares imported public contracts and behavior as well as the root's observable results.
 
 ## Bounded sequences and recoverable admission (0.5)
 

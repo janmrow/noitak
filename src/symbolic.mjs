@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { argument, invoke, predicate } from './runtime.mjs';
 
-export const symbolicConfig = { method: 'z3-bv8-datatypes-v2', timeoutMsPerQuery: 3000, timeoutMsPerWorker: 10000 };
+export const symbolicConfig = { method: 'z3-bv8-datatypes-v3', timeoutMsPerQuery: 3000, timeoutMsPerWorker: 10000 };
 const worker = fileURLToPath(new URL('./symbolic_worker.py', import.meta.url));
 
 const unknown = reason => ({ status: 'unverified', reason });

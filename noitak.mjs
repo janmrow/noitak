@@ -2,7 +2,7 @@
 import { readFile } from 'node:fs/promises';
 import { load } from './src/loader.mjs';
 import { Diagnostic } from './src/parser.mjs';
-import { verify, DEFAULT_LIMIT } from './src/verify.mjs';
+import { verify, DEFAULT_LIMIT, VERSION } from './src/verify.mjs';
 import { compare } from './src/diff.mjs';
 import { build } from './src/backend.mjs';
 import { testVectors } from './src/vectors.mjs';
@@ -19,6 +19,11 @@ function print(data) {
   else console.log(JSON.stringify(data, null, 2));
 }
 async function main() {
+  if (argv[0] === '--version') {
+    if (json) print({ version: VERSION });
+    else console.log(VERSION);
+    return;
+  }
   if (argv[0] === '--help') {
     if (json) print({ usage });
     else console.log(usage);

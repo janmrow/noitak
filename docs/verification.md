@@ -20,7 +20,7 @@ Each query has a 3-second timeout and the parent gives each worker 10 seconds in
 
 ## Composition and observable independence
 
-Every helper is checked on its full signature. Proof of a callee alone cannot establish that a particular caller supplies admitted arguments. A reached frame must safely evaluate all arguments, pass the callee precondition, evaluate its body safely and satisfy its guarantee. Arithmetic faults retain their enclosing phase. False nested admission produces `CALL_PRECONDITION`, distinct from the outer entry's legitimate rejection. Neither engine can exclude that case from a caller proof.
+Every helper is checked on its full signature. Proof of a callee alone cannot establish that a particular caller supplies admitted arguments. A reached strict call must safely evaluate all arguments, pass the callee precondition, evaluate its body safely and satisfy its guarantee. Arithmetic faults retain their enclosing phase. False nested admission produces `CALL_PRECONDITION`, distinct from the outer entry's legitimate rejection. Neither engine can exclude that case from a caller proof.
 
 Each `independent` clause adds a required `observable-independence` check after ordinary safety. At fixed public arguments and flags, let R be the call with every protected argument replaced by its first typed domain value. For every input X, require admission(X) = admission(R) and, on admission, body(X) = body(R). Equality to the same reference implies pairwise equality for any two choices of protected data. The function safety proof establishes safe predicates and complete, checked execution on admission. Solver `safety` and `admission` fields on the independence check refer to its synthetic boolean obligation. A violation reports both calls and outcomes. [Self-composition research](https://www-sop.inria.fr/everest/Tamara.Rezk/publication/Barthe-DArgenio-Rezk.pdf)
 
@@ -36,7 +36,7 @@ The signed-order mutation test runs a separate compiler copy with one mistransla
 
 On POSIX, build and gate claim the fresh destination with an exclusive directory creation after staging all files. The destination can briefly appear empty before the complete bundle is renamed into place. A competing creator that claims the name first keeps its directory. Consume the bundle after the command exits successfully. An interruption during publication can leave an empty reservation behind. Use a fresh destination to retry.
 
-Function verification report schema 3 records source SHA-256, module identity and version, tool version, proof method and configuration, per-function reads, the direct call graph and exact domain cardinalities. Each function check identifies the obligation, source location, and outcome. Enumeration supplies examined and admitted counts. The symbolic engine records the Z3 version when available. Builds also hash the ESM and declaration bytes and publish the files together. Digests are unsigned.
+Function verification report schema 4 records source and dependency SHA-256 digests, module identity and version, tool version, proof method and configuration, per-function reads, the direct call graph and exact domain cardinalities. Each function check identifies the obligation, source location, and outcome. Enumeration supplies examined and admitted counts. The symbolic engine records the Z3 version when available. Builds also hash the ESM and declaration bytes and publish the files together. Digests are unsigned.
 
 | Status | Meaning |
 | --- | --- |
@@ -50,7 +50,7 @@ The trusted base includes the frontend, selected proof engine, JS evaluator, art
 
 ## Comparing revisions
 
-Diff report schema 4 includes both verification reports. The selected engine also compares eligible functions. Enumeration honors the case limit. Z3 comparison uses a separate counterexample query with the same time bounds as individual proofs. Names, positional parameter types, result type, reads and public enum and record definitions are part of the comparison. It ignores locations and formatting when comparing expressions.
+Diff report schema 5 includes both verification reports. The selected engine also compares eligible functions. Enumeration honors the case limit. Z3 comparison uses a separate counterexample query with the same time bounds as individual proofs. Names, positional parameter types, result type, reads and public enum and record definitions are part of the comparison. It ignores locations and formatting when comparing expressions.
 
 For functions proven on both sides with matching signatures and reads, the following rules apply to **edited contracts**. Let A and B denote the old and candidate revisions respectively.
 
@@ -75,8 +75,15 @@ For symbolic comparison both programs share the same input symbols, flags and co
 Coverage compares obligation, status and exact domain size. Each finding stands independently. A new export with a grant therefore produces both an export finding and a policy violation. Only compatible findings pass the gate.
 
 
-Gate publishes only if both revisions pass their own proofs and all findings are compatible. The candidate IR and source digest flow from the comparison to the build in the same process. The artifact manifest additionally identifies the exact review.json bytes. For a real change decision the caller selects a trusted baseline, toolchain and policy. The CI job exercises both TypeScript pilots. A passing experiment job means even the expected refusals were reproduced.
+Gate publishes only if both revisions pass their own proofs and all findings are compatible. The candidate IR and source digest flow from the comparison to the build in the same process. The artifact manifest additionally identifies the exact review.json bytes. For a real change decision the caller selects a trusted baseline, toolchain and policy. The CI job exercises all three TypeScript pilots. A passing experiment job means even the expected refusals were reproduced.
 
-The body comparison applies to public entry points, with private implementations included at each call site. A private-only refactor may change the source digest without changing a public outcome. Adding a grant to a private helper is a policy violation, even when the caller already has it. Removing an independence guarantee from a retained helper or public entry requires review. Removed exports and changes to exposed record definitions remain risky. A fresh proof of every required check on both revisions is mandatory for publication.
+The body comparison applies to root and imported public functions, with private implementations taken from the reachable call graph. A private-only refactor may change the source digest without changing a public outcome. Adding a grant to a private helper is a policy violation, even when the caller already has it. Removing an independence guarantee from a retained helper or public entry requires review. Removed exports and changes to exposed record definitions remain risky. A fresh proof of every required check on both revisions is mandatory for publication.
 
-Consumers of schema 3 function reports should index checks by `(function, property)`. Multiple checks may describe one function, and private helper checks are included. A `passed` value covers the aggregate. CI consumers should also check the process exit status and use the new invocation's artifact digests.
+Consumers of schema 4 function reports should index checks by `(function, property)`. Multiple checks may describe one function, and private helper checks are included. A `passed` value covers the aggregate. CI consumers should also check the process exit status and use the new invocation's artifact digests.
+
+
+## Bounded data and linked evidence
+
+For element cardinality K and capacity C, sequence cardinality is the sum of K^i for i from zero through C. Enumeration visits increasing lengths, then varies the first element fastest. Z3 uses a distinct datatype constructor for each legal length. Each fold iteration guards both its accumulator update and its safety condition by presence of the element. Inactive datatype selectors cannot contribute a value or a fault. An attempted call always requires safe index, arguments and admission; callee body and postcondition safety are required on admission.
+
+A pin change records a dependency finding. Independent safety, authority, interface and relational findings determine whether the gate can accept the revision. The loader verifies the entire pin chain before a result can be published. The report includes even unused imported functions and their proofs. The root export's call edges identify its dependency path. All root and imported types enter the relational type-layout check. The CLI snapshots each revision separately and builds from the reviewed candidate graph. Pins and unsigned digests identify content; a consumer still supplies the trusted baseline and toolchain.

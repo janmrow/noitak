@@ -1,5 +1,5 @@
-name: Verification and integration pilots
-on: [push, pull_request]
+name: Verification and release checks
+on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
 jobs:
@@ -20,8 +20,18 @@ jobs:
       - run: npm run test:symbolic
       - run: npm run pilot -- build/pilot
       - run: npm run pilot:support -- build/support
+      - run: npm run pilot:batch -- build/batch
+      - run: npm run release:check -- build/distribution
+      - uses: actions/upload-artifact@v4
+        with:
+          name: noitak-distribution
+          path: build/distribution/
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: pilot-reviews
-          path: build/
+          path: |
+            build/pilot/
+            build/support/
+            build/batch/

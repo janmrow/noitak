@@ -39,3 +39,33 @@ test('pins bind the full graph, preserve type identity and propagate private edi
     return load(path);
   }
 });
+
+test('diamond imports share nominal definitions, detect conflicting pins and reject root cycles', async t => {
+  const dir = await mkdtemp(join(tmpdir(),'noitak-diamond-'));
+  t.after(() => rm(dir,{recursive:true,force:true}));
+  const source = '(module common 1.0.0 (record bit (v bool)) (fn id ((b bit)) bit (reads) (requires true) (ensures true) b))';
+  const middle = (name,pin) => `(module ${name} 1.0.0 (import common ${pin}) (fn f ((b common.bit)) common.bit (reads) (requires true) (ensures true) (call common.id b)))`;
+  const left = middle('left',hash(source));
+  const file = join(dir,'root.noi');
+  await writeFile(join(dir,'common.noi'),source);
+  await writeFile(join(dir,'left.noi'),left);
+  async function root(right) {
+    await writeFile(join(dir,'right.noi'),right);
+    await writeFile(file,`(module app 1.0.0 (import left ${hash(left)}) (import right ${hash(right)}) (import common ${hash(source)})
+      (fn entry ((b common.bit)) common.bit (reads) (requires true) (ensures (= result b)) (call left.f (call right.f b))))`);
+    return load(file);
+  }
+  const ok = await root(middle('right',hash(source)));
+  assert.ok(verify(ok.unit,ok.bytes,2).passed);
+  assert.equal(ok.unit.functions.filter(f=>f.name==='common.id').length,1);
+  await assert.rejects(root(middle('right','0'.repeat(64))),e=>e.detail?.code==='E_IMPORT');
+  await assert.rejects(root(`(module right 1.0.0 (import app ${'0'.repeat(64)}))`),e=>e.detail?.code==='E_IMPORT');
+});
+
+test('CLI loader refuses oversized input before parsing it', async t => {
+  const dir = await mkdtemp(join(tmpdir(),'noitak-source-limit-'));
+  t.after(() => rm(dir,{recursive:true,force:true}));
+  const file = join(dir,'large.noi');
+  await writeFile(file,Buffer.alloc(1048577,32));
+  await assert.rejects(load(file),e=>e.detail?.code==='E_LIMIT' && e.detail.file===file);
+});
