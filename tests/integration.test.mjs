@@ -189,3 +189,21 @@ api.transition({},ticket,{tag:'escalate'});
 api.bump({},7);`);
   run(['node_modules/typescript/bin/tsc','--strict','--module','nodenext','--noEmit',host]);
 });
+
+test('wide reducer gate with an exhausted enumeration budget or unavailable auto worker publishes nothing', t => {
+  const dir = temporary(t), target = join(dir,'artifact'), src = 'pilot/metering/metering.noi';
+  for (const engine of ['enumerate','auto']) {
+    const run = spawnSync(process.execPath,['noitak.mjs','gate',src,src,target,'--engine',engine,'--limit','3','--json'],
+      {encoding:'utf8', env:{...process.env, PATH:dir}});
+    assert.equal(run.status,1,run.stderr);
+    const report = JSON.parse(run.stdout);
+    for (const proof of [report.before,report.after]) {
+      const [helper,step,induction] = proof.checks;
+      assert.equal(helper.reason,engine === 'auto' ? 'ENOENT' : 'case-budget');
+      assert.equal(step.status,'unverified');
+      assert.equal(induction.reason,'missing-transition-proof');
+    }
+    assert.equal(report.passed,false);
+    assert.equal(existsSync(target),false);
+  }
+});

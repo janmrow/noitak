@@ -1,0 +1,24 @@
+(module access 1.0.0
+  (enum decision (owner) (delegated) (tenant_mismatch) (revoked) (no_grant))
+  (record principal (tenant uuid) (user uuid) (suspended bool))
+  (record resource (tenant uuid) (owner uuid) (reader uuid) (has_reader bool) (expires u32))
+
+  (fn authorize ((p principal) (r resource) (now u32) (trace uuid)) decision
+    (reads delegation)
+    (independent trace)
+    (requires true)
+    (ensures
+      (if (get p suspended) (= result (tag decision revoked))
+        (if (not (= (get p tenant) (get r tenant))) (= result (tag decision tenant_mismatch))
+          (if (= (get p user) (get r owner)) (= result (tag decision owner))
+            (if (or (not (flag delegation)) (or (not (get r has_reader))
+                  (or (not (= (get p user) (get r reader))) (<= (get r expires) now))))
+              (= result (tag decision no_grant))
+              (= result (tag decision delegated)))))))
+    (if (get p suspended) (tag decision revoked)
+      (if (= (get p tenant) (get r tenant))
+        (if (= (get p user) (get r owner)) (tag decision owner)
+          (if (and (flag delegation) (and (get r has_reader)
+                  (and (= (get p user) (get r reader)) (< now (get r expires)))))
+            (tag decision delegated) (tag decision no_grant)))
+        (tag decision tenant_mismatch)))))

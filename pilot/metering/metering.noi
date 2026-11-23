@@ -1,0 +1,39 @@
+(module metering 1.0.0
+  (enum status (ready) (foreign_meter) (out_of_order) (quota_exceeded))
+  (record account (meter uuid) (limit u32) (used u32) (serial u32) (status status))
+  (record reading (meter uuid) (serial u32) (units u32))
+
+  (helper classify ((s account) (r reading)) status
+    (reads)
+    (requires (<= (get s used) (get s limit)))
+    (ensures (or (not (= result (tag status ready)))
+                 (and (= (get s meter) (get r meter))
+                      (<= (get r units) (- (get s limit) (get s used))))))
+    (if (not (= (get s meter) (get r meter))) (tag status foreign_meter)
+      (if (or (<= (get r serial) (get s serial))
+              (not (= (- (get r serial) (get s serial)) 1u32))) (tag status out_of_order)
+        (if (< (- (get s limit) (get s used)) (get r units)) (tag status quota_exceeded)
+          (tag status ready)))))
+
+  (reducer reconcile ((s account) (r reading)) account
+    (reads)
+    (capacity 8192)
+    (invariant (<= (get s used) (get s limit)))
+    (ensures
+      (and (= (get result meter) (get s meter))
+        (and (= (get result limit) (get s limit))
+          (if (not (= (get s status) (tag status ready))) (= result s)
+            (if (= (get result status) (tag status ready))
+              (and (= (get r meter) (get s meter))
+                (and (= (get result used) (+ (get s used) (get r units)))
+                  (and (= (get result serial) (get r serial))
+                       (= (- (get result serial) (get s serial)) 1u32))))
+              (and (= (get result used) (get s used))
+                   (= (get result serial) (get s serial))))))))
+    (if (not (= (get s status) (tag status ready))) s
+      (let verdict (call classify s r)
+        (let accepted (= verdict (tag status ready))
+          (make account (meter (get s meter)) (limit (get s limit))
+            (used (if accepted (+ (get s used) (get r units)) (get s used)))
+            (serial (if accepted (get r serial) (get s serial)))
+            (status verdict)))))))
