@@ -172,3 +172,20 @@ test('gate builds from the compared revision and keeps an earlier bundle intact 
   assert.equal(denied.artifact,undefined);
   assert.equal(sha(join(out,'module.mjs')),earlier);
 });
+
+test('record declaration enforces shape and private helpers stay off the TypeScript API', t => {
+  const dir = temporary(t);
+  cli(['build','pilot/support/tickets.noi',join(dir,'support')]);
+  const host = join(dir,'host.mts');
+  writeFileSync(host, `import { api, type Record_ticket } from './support/module.mjs';
+const ticket: Record_ticket = {stage:{tag:'open'},revision:17};
+// @ts-expect-error public records have readonly fields
+ticket.revision = 99;
+// @ts-expect-error missing revision
+api.transition({}, {stage:{tag:'open'}}, {tag:'resolve'});
+// @ts-expect-error unknown event
+api.transition({},ticket,{tag:'escalate'});
+// @ts-expect-error private helper has no host entry point
+api.bump({},7);`);
+  run(['node_modules/typescript/bin/tsc','--strict','--module','nodenext','--noEmit',host]);
+});

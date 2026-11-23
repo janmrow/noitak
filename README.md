@@ -1,10 +1,39 @@
-# Noitak 0.3
+# Noitak 0.4
 
-Noitak is an experimental language for small decisions that need independently checkable contracts. Its compiler accepts functions over bytes, booleans and finite tagged values, checks their declared reads, and can exhaustively verify their behavior before producing an ES module. Its change gate asks a different question from the proof gate. Two versions can each satisfy their contracts and still differ in behavior or authority.
+Noitak compiles verified, finite state transitions and projections into standalone JavaScript modules with TypeScript declarations. A module can consume a structured snapshot, call contracted helpers and return a new value. A change gate checks admission, guarantees, observed returns and authority before publishing a candidate. [Project philosophy](docs/philosophy.md)
 
-Verification comes first because generating an implementation can cost less than reviewing its consequences. An agent can write the function and propose its contract. A reviewer needs independent evidence about admission, guarantees, and authority before accepting the change. Noitak source files use the `.noi` extension. [Project philosophy](docs/philosophy.md)
+| Capability | 0.3 | 0.4 |
+| --- | --- | --- |
+| Data | Bytes, booleans, tagged scalar payloads | Adds nominal immutable records with scalar or enum fields |
+| Composition | Independent public functions | Public entries and private, acyclic helper calls with checked contracts and transitive reads |
+| Information flow | Declared boolean reads | Adds verified independence of admission and returned data from named parameters |
+| Evidence | Enumeration or Z3, counterexample replay | Adds automatic finite cross-checks of small symbolic claims, including change comparisons |
+| Review | Public contracts, implementations and grants | Includes reachable helper edits, private grants, record layouts and independence promises |
 
-## Run the experiment
+## Run the support workflow
+
+Use Node.js 22+, npm and Python 3.10+ with venv and pip. From the repository root run:
+
+```sh
+npm ci
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -r requirements-symbolic.txt
+npm test
+npm run test:symbolic
+npm run pilot:support -- build/support
+```
+
+The pilot gates three revisions, compiles a strict TypeScript ticket service against the accepted bundle and processes four events. The rejected candidates alter a public revision on a private note and expose a staff escalation bit in a customer response. Each decision has a JSON report. The pilot requires a fresh output directory. [Workflow and evidence](pilot/support/README.md)
+
+With Node alone you can enumerate the baseline and run five host-boundary vectors:
+
+```sh
+node noitak.mjs verify pilot/support/tickets.noi --json
+node noitak.mjs test pilot/support/tickets.noi examples/support-vectors.json
+```
+
+## Run the scalar example
 
 Use Node.js 22+ and npm. The compiler uses Node built-ins. The default workflow uses the pinned TypeScript compiler to check the host application. The optional symbolic engine uses Python and Z3.
 
@@ -16,9 +45,9 @@ npm run demo
 
 The demo builds the quota example in a temporary directory, compiles a strict TypeScript caller, runs it, finds a failing input in a second implementation, and compares a proposed update with the original module.
 
-## Run the change-review pilot
+## Run the delivery change-review pilot
 
-Use Node.js 22+ and Python 3 with venv and pip. From the repository root:
+Use Node.js 22+ and Python 3.10+ with venv and pip. From the repository root:
 
 ```sh
 npm ci
@@ -95,7 +124,7 @@ The first command exits 1. For input 0 the revised contract permits a hypothetic
 
 ## Optional symbolic proof
 
-From a Python 3 environment with venv and pip available:
+From a Python 3.10+ environment with venv and pip available:
 
 ```sh
 python3 -m venv .venv
@@ -123,13 +152,14 @@ The original `node noi.mjs` entry point remains available for existing scripts. 
 
 ## Scope
 
-The proof covers execution on the declared finite domains and assumes the compiler, evaluator and JS environment implement the documented semantics. TypeScript describes bytes as numbers. The runtime checks their actual range. Flag reads consume explicit host data. Application authorization, confidentiality, timing, and code outside the module sit outside the proof. Source and artifact digests identify bytes. Distribution and signer identity require separate controls.
+The proof covers execution on the declared finite domains and assumes the compiler, evaluator and JS environment implement the documented semantics. TypeScript describes bytes as numbers. The runtime checks their actual range. Flag reads consume explicit host data. Observable independence covers annotated parameters, typed inputs and fixed flags. Application authorization, timing, storage and host code sit outside the proof. Source and artifact digests identify bytes. Distribution and signer identity require separate controls.
 
+- [0.4 engineering assessment and migration](docs/release-0.4.md)
 - [Language and execution rules](docs/language.md)
 - [Proof evidence, comparison rules and trusted components](docs/verification.md)
 - [Implementation architecture](docs/architecture.md)
 - [Verification-first design](docs/philosophy.md)
-- [Potential next experiments](docs/roadmap.md)
+- [Proposed 0.5 milestone](docs/roadmap.md)
 
 ## License
 

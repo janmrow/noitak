@@ -1,4 +1,4 @@
-name: Delivery pilot
+name: Verification and integration pilots
 on: [push, pull_request]
 permissions:
   contents: read
@@ -19,8 +19,9 @@ jobs:
       - run: npm test
       - run: npm run test:symbolic
       - run: npm run pilot -- build/pilot
+      - run: npm run pilot:support -- build/support
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: delivery-review
-          path: build/pilot/
+          name: pilot-reviews
+          path: build/

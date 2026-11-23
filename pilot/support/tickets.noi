@@ -1,0 +1,40 @@
+(module support 0.4.0
+  (enum stage (open) (waiting) (closed))
+  (enum event (customer_reply) (agent_reply) (resolve) (staff_note))
+  (enum queue (standard) (on_call))
+  (record ticket (stage stage) (revision byte))
+  (record staff (escalated bool) (covered bool))
+  (record summary (closed bool) (waiting_on_customer bool))
+
+  (helper bump ((revision byte)) byte (reads)
+    (requires (< revision 255)) (ensures (< revision result))
+    (+ revision 1))
+
+  (helper next_stage ((current stage) (action event)) stage (reads)
+    (requires true) (ensures true)
+    (match action (customer_reply (tag stage open)) (agent_reply (tag stage waiting))
+                  (resolve (tag stage closed)) (staff_note current)))
+
+  ; A staff note leaves the public revision intact, even at the byte ceiling.
+  (fn transition ((prior ticket) (action event)) ticket (reads)
+    (requires (or (= action (tag event staff_note)) (< (get prior revision) 255)))
+    (ensures (match action
+      (staff_note (= result prior))
+      (resolve (and (= (get result stage) (tag stage closed)) (= (get result revision) (+ (get prior revision) 1))))
+      (agent_reply (and (= (get result stage) (tag stage waiting)) (= (get result revision) (+ (get prior revision) 1))))
+      (customer_reply (and (= (get result stage) (tag stage open)) (= (get result revision) (+ (get prior revision) 1))))))
+    (make ticket (stage (call next_stage (get prior stage) action))
+      (revision (if (= action (tag event staff_note)) (get prior revision) (call bump (get prior revision))))))
+
+  ; The caller holds the staff context for routing. This projection may be sent to a customer.
+  (fn public_view ((prior ticket) (internal staff)) summary (reads) (independent internal)
+    (requires true) (ensures (= (get result closed) (= (get prior stage) (tag stage closed))))
+    (make summary (closed (= (get prior stage) (tag stage closed)))
+                  (waiting_on_customer (= (get prior stage) (tag stage waiting)))))
+
+  (fn route ((prior ticket) (internal staff)) queue (reads)
+    (requires true)
+    (ensures (= (= result (tag queue on_call))
+                (and (= (get prior stage) (tag stage open)) (and (get internal escalated) (get internal covered)))))
+    (if (and (get internal covered) (and (get internal escalated) (= (get prior stage) (tag stage open))))
+        (tag queue on_call) (tag queue standard))))

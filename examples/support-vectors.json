@@ -1,0 +1,32 @@
+[
+  {
+    "fn": "transition",
+    "flags": {},
+    "args": [{"stage":{"tag":"closed"},"revision":254},{"tag":"customer_reply"}],
+    "expected": {"ok":true,"value":{"stage":{"tag":"open"},"revision":255}}
+  },
+  {
+    "fn": "transition",
+    "flags": {},
+    "args": [{"stage":{"tag":"waiting"},"revision":255},{"tag":"agent_reply"}],
+    "expected": {"ok":false,"code":"PRECONDITION","phase":"requires"}
+  },
+  {
+    "fn": "transition",
+    "flags": {},
+    "args": [{"stage":{"tag":"waiting"},"revision":255},{"tag":"staff_note"}],
+    "expected": {"ok":true,"value":{"stage":{"tag":"waiting"},"revision":255}}
+  },
+  {
+    "fn": "public_view",
+    "flags": {},
+    "args": [{"stage":{"tag":"open"},"revision":4},{"escalated":true,"covered":true}],
+    "expected": {"ok":true,"value":{"closed":false,"waiting_on_customer":false}}
+  },
+  {
+    "fn": "route",
+    "flags": {},
+    "args": [{"stage":{"tag":"open"},"revision":4},{"escalated":true}],
+    "expected": {"ok":false,"code":"ARGUMENT","phase":"boundary"}
+  }
+]
