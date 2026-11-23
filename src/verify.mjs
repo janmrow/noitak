@@ -35,7 +35,7 @@ export function verify(unit, source, limit, engine = 'enumerate') {
   const checks = unit.functions.flatMap(f => {
     const domain = domainOf(f).total;
     const audit = (answer, enumerate) => crosscheck(answer, domain, limit, enumerate, 'unverified');
-    const identity = { function: f.name, visibility: f.kind === 'fn' ? 'public' : 'private',
+    const identity = { function: f.name, visibility: f.kind === 'helper' ? 'private' : f.kind === 'imported' ? 'imported' : 'public',
       loc: f.loc, domain: String(domain) };
     const finiteSafety = () => obligation(f, limit);
     const safety = symbolic ? audit(solve(f, types), finiteSafety) : finiteSafety();
@@ -54,7 +54,7 @@ export function verify(unit, source, limit, engine = 'enumerate') {
     { ...symbolicConfig, crosscheckMaxCases: Math.min(limit, CROSSCHECK_LIMIT) } :
     { method: 'finite-enumeration-v2' };
   return { schema: 3, toolVersion: VERSION, module: unit.name, version: unit.version,
-    sourceSha256: hash(source), configuration: { ...configuration, maxCasesPerFunction: limit },
+    sourceSha256: hash(source), dependencies: unit.dependencies ?? {}, configuration: { ...configuration, maxCasesPerFunction: limit },
     calls: Object.fromEntries(unit.functions.map(f => [f.name, f.calls])),
     permissions: Object.fromEntries(unit.functions.map(f => [f.name, f.reads])),
     checks, outsideProof: ['host-authorization', 'timing-and-resource-use'].map(property => ({ property, status: 'unsupported' })),

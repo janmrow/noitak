@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { readFile } from 'node:fs/promises';
-import { compile } from './src/frontend.mjs';
+import { load } from './src/loader.mjs';
 import { Diagnostic } from './src/parser.mjs';
 import { verify, DEFAULT_LIMIT } from './src/verify.mjs';
 import { compare } from './src/diff.mjs';
@@ -17,16 +17,6 @@ function print(data) {
   else if (data.diagnostic) console.error(Object.values(data.diagnostic).join(' '));
   else if (data.changes) console.log(formatReview(data));
   else console.log(JSON.stringify(data, null, 2));
-}
-async function load(path) {
-  const bytes = await readFile(path);
-  try {
-    const source = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-    return { unit: compile(source), bytes };
-  } catch (e) {
-    if (e instanceof Diagnostic) e.detail.file = path;
-    throw e;
-  }
 }
 async function main() {
   if (argv[0] === '--help') {

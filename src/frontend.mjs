@@ -69,9 +69,12 @@ const arities = new Map(Object.entries({
   let: 3, if: 3, flag: 1, not: 1, and: 2, or: 2, '+': 2, '-': 2, '<': 2, '<=': 2, '=': 2
 }));
 
-function expression(node, env, context) {
+function expression(node, env, context, depth = 1) {
+  const { budget } = context;
+  budget.work++;
+  budget.depth = Math.max(budget.depth, depth);
   const { reads, types, helpers } = context;
-  const check = (expr, scope = env) => expression(expr, scope, context);
+  const check = (expr, scope = env) => expression(expr, scope, context, depth + 1);
   if (node.atom !== undefined) {
     const s = node.atom;
     if (['true', 'false'].includes(s)) return ['bool', s === 'true'];
@@ -119,9 +122,9 @@ function expression(node, env, context) {
       expect(args[i + 1], actual, wanted);
       return ir;
     });
-    // A closed call frame retains the exact implementation reviewed by the caller.
-    return [target.output, ['call', target.name, target.params.map(([key]) => key), values,
-      target.requires, target.body, target.ensures]];
+    budget.work += target.budget.work;
+    budget.depth = Math.max(budget.depth, depth + target.budget.depth);
+    return [target.output, ['apply', target.name, values]];
   }
   if (op === 'tag') {
     if (args.length < 2) fail(node, 'E_FORM', 'Expected enum and variant');
@@ -188,7 +191,7 @@ function expression(node, env, context) {
   return [out, [op, ...operands.map(([, e]) => e)]];
 }
 
-function fn(node, types, helpers) {
+function fn(node, types, helpers, prefix) {
   const kind = node.items?.[0]?.atom === 'helper' ? 'helper' : 'fn';
   const fields = form(node, kind);
   if (![7, 8].includes(fields.length)) fail(node, 'E_FORM', 'Malformed function declaration');
@@ -214,51 +217,77 @@ function fn(node, types, helpers) {
     }
   }
   const calls = new Set();
+  const budget = { work: 0, depth: 0 };
   const checked = (expr, scope, t, callable) => {
-    const [actual, ir] = expression(expr, scope, { reads, types, helpers: callable, calls });
+    const [actual, ir] = expression(expr, scope, { reads, types, helpers: callable, calls, budget });
     expect(expr, actual, t);
     return ir;
   };
-  return { name: name(id), kind, params, output, reads, independent: [...protectedParams.keys()].sort(),
+  return { name: prefix + name(id), kind, params, output, reads, independent: [...protectedParams.keys()].sort(),
     requires: checked(form(pre, 'requires', 2)[0], env, 'bool'),
     ensures: checked(form(post, 'ensures', 2)[0], new Map(env).set('result', output), 'bool'),
-    body: checked(body, env, output, helpers), calls: [...calls].sort(), loc: id.loc };
+    body: checked(body, env, output, helpers), calls: [...calls].sort(), budget, loc: id.loc };
+}
+
+export function importsOf(root) {
+  const imports = new Map();
+  for (const node of form(root, 'module').slice(2).filter(node => node.items?.[0]?.atom === 'import')) {
+    const [id, digest] = form(node, 'import', 3);
+    bind(imports, id, digest.atom);
+    if (!/^[a-f0-9]{64}$/.test(digest.atom ?? '')) fail(digest, 'E_IMPORT', 'Expected a SHA-256 digest');
+  }
+  return imports;
 }
 
 export function compile(source) {
-  const root = parse(source);
+  return compileModule(parse(source), new Map());
+}
+
+export function compileModule(root, dependencies, prefix = '') {
   const [id, version, ...defs] = form(root, 'module');
   if (!defs.length || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version?.atom))
     fail(root, 'E_FORM', 'Expected module name, numeric version and at least one function');
-  const seen = new Map();
-  const enums = new Map();
+  const moduleName = name(id);
+  const types = new Map(), helpers = new Map(), seen = new Map();
+  const allTypes = new Map(), allFunctions = new Map();
+  for (const [key, digest] of importsOf(root)) {
+    const dep = dependencies.get(key);
+    if (dep?.digest !== digest || dep.unit.name !== key) fail(root, 'E_IMPORT', 'Missing or mismatched import: ' + key);
+    for (const t of dep.unit.types) allTypes.set(t.name, t);
+    for (const f of dep.unit.functions) allFunctions.set(f.name, f);
+    for (const t of dep.unit.localTypes) types.set(t.name, t);
+    for (const f of dep.unit.localFunctions) if (f.kind === 'imported') helpers.set(f.name, f);
+  }
+  const localTypes = [], localFunctions = [];
   const tag = node => node.items?.[0]?.atom;
-  for (const node of defs.filter(n => tag(n) === 'enum'))
-    bind(enums, node.items[1] ?? node, enumeration(node));
-  const types = new Map(enums);
-  for (const node of defs.filter(n => tag(n) === 'record'))
-    bind(types, node.items[1] ?? node, recordType(node, enums));
-  const helpers = new Map();
-  const functions = [];
-  for (const node of defs.filter(n => !['enum', 'record'].includes(tag(n)))) {
-    const f = fn(node, types, helpers);
-    bind(seen, node.items[1], f);
-    boundExpansion(node, f.body);
-    if (f.kind === 'helper') helpers.set(f.name, f);
-    functions.push(f);
+  function declare(node, t) {
+    bind(types, node.items[1], t);
+    t.name = prefix + t.name;
+    localTypes.push(t);
+    allTypes.set(t.name,t);
   }
-  if (!functions.some(f => f.kind === 'fn')) fail(root, 'E_FORM', 'Expected at least one public function');
-  return { enums: [...enums.values()], records: [...types.values()].filter(t => t.fields),
-    name: name(id), version: version.atom, functions };
-}
-
-// Walk shared subtrees per occurrence. Stop before serializing or running a
-// compact call graph whose expanded expression would exceed the language limit.
-function boundExpansion(node, body) {
-  let remaining = 16384;
-  function visit(value, depth) {
-    if (--remaining < 0 || depth > 192) fail(node, 'E_LIMIT', 'Expanded body exceeds size or depth limit');
-    if (Array.isArray(value)) for (const item of value) visit(item, depth + 1);
+  for (const node of defs.filter(n => tag(n) === 'enum')) declare(node, enumeration(node));
+  const enums = new Map([...types].filter(([,t]) => t.variants));
+  for (const node of defs.filter(n => tag(n) === 'record')) declare(node, recordType(node, enums));
+  for (const node of defs.filter(n => !['import','enum','record'].includes(tag(n)))) {
+    const f = fn(node, types, helpers, prefix);
+    const local = bind(seen, node.items[1], f);
+    if (f.budget.work > 16384 || f.budget.depth > 192) fail(node, 'E_LIMIT', 'Expression work or depth exceeds limit');
+    const frames = new Map();
+    for (const key of f.calls) {
+      const target = allFunctions.get(key);
+      for (const entry of Object.entries(target.graph)) frames.set(...entry);
+      frames.set(key, [target.params.map(([k]) => k), target.requires, target.body, target.ensures]);
+    }
+    f.graph = Object.fromEntries([...frames].sort(([a],[b]) => a < b ? -1 : 1));
+    if (f.kind === 'helper') helpers.set(local, f);
+    else if (prefix) f.kind = 'imported';
+    allFunctions.set(f.name,f);
+    localFunctions.push(f);
   }
-  visit(body, 0);
+  if (!localFunctions.some(f => f.kind !== 'helper')) fail(root, 'E_FORM', 'Expected at least one public function');
+  const declarations = [...allTypes.values()];
+  return { types: declarations, localTypes, localFunctions,
+    enums: declarations.filter(t => t.variants), records: declarations.filter(t => t.fields),
+    name: moduleName, version: version.atom, functions: [...allFunctions.values()] };
 }

@@ -47,6 +47,10 @@ export function compare(oldUnit, newUnit, before, after) {
     changes.push({ subject, field, status, before: oldValue, after: newValue });
   if (oldUnit.name !== newUnit.name)
     record('module', 'identity', 'policy-violation', oldUnit.name, newUnit.name);
+  for (const key of new Set([...Object.keys(before.dependencies), ...Object.keys(after.dependencies)])) {
+    const a = before.dependencies[key], b = after.dependencies[key];
+    if (a !== b) record(key, 'dependency-pin', 'compatible', a ?? null, b ?? null);
+  }
   const oldTypes = new Map([...oldUnit.enums, ...oldUnit.records].map(e => [e.name, e]));
   const newTypes = new Map([...newUnit.enums, ...newUnit.records].map(e => [e.name, e]));
   for (const name of new Set([...oldTypes.keys(), ...newTypes.keys()])) {
@@ -66,10 +70,10 @@ export function compare(oldUnit, newUnit, before, after) {
       record(helper.name, 'independent', prior.independent.some(k => !helper.independent.includes(k)) ?
         'policy-violation' : 'compatible', prior.independent, helper.independent);
   }
-  const newer = new Map(newUnit.functions.filter(f => f.kind === 'fn').map(f => [f.name, f]));
+  const newer = new Map(newUnit.functions.filter(f => f.kind !== 'helper').map(f => [f.name, f]));
   const coverage = report => new Map(report.checks.filter(c => c.property === 'admissible-and-safe').map(c => [c.function, { property: c.property, status: c.status, domain: c.domain }]));
   const previous = coverage(before), current = coverage(after);
-  for (const old of oldUnit.functions.filter(f => f.kind === 'fn')) {
+  for (const old of oldUnit.functions.filter(f => f.kind !== 'helper')) {
     const next = newer.get(old.name);
     if (!next) {
       record(old.name, 'export', 'risky', 'present', null);
@@ -77,7 +81,7 @@ export function compare(oldUnit, newUnit, before, after) {
     }
     newer.delete(old.name);
     for (const field of ['params', 'output', 'requires', 'ensures', 'body', 'reads', 'independent']) {
-      if (equal(old[field], next[field])) continue;
+      if (equal(old[field], next[field]) && (field !== 'body' || equal(old.graph, next.graph))) continue;
       if (['requires', 'ensures', 'body'].includes(field)) {
         const proven = previous.get(old.name).status === 'proven' && current.get(old.name).status === 'proven';
         const finding = compareField(old, next, field, {configuration: after.configuration, proven, types});

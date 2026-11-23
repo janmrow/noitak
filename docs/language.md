@@ -79,3 +79,9 @@ Each lowered body is limited to 16,384 IR nodes (arrays and leaves) and 192 nest
 Place `(independent internal ...)` between `reads` and `requires` to name one or more distinct parameters. For every valid pair of calls with equal unlisted arguments and equal flags, changing any or all listed parameters must preserve admission and the entire successful return value. A secret-dependent precondition can violate the obligation even when every admitted call returns a constant.
 
 Type checking resolves the parameter names. Verification establishes the property and build requires that proof. The annotation may appear on a helper as well as an export. The property applies to the declared value domain. Timing, malformed host objects, descriptor traps, resource consumption and code that handles the returned data are outside its scope.
+
+## Pinned sibling modules (0.5)
+
+`(import ledger SHA256)` names a sibling file `ledger.noi`. The pin is the lowercase SHA-256 of its exact UTF-8 source bytes. Its module declaration must name `ledger`. Imported types and public functions are qualified, for example `ledger.ticket` and `(call ledger.transition prior event)`. Local declarations keep their ordinary names. Transitive dependencies must be pinned by their direct importer. Each module identity resolves to one snapshot per revision. The entry API exports only its own functions.
+
+Each CLI invocation loads at most 64 regular source files of up to 1 MiB each. Import names follow identifier syntax and imported files cannot be symbolic links. The verifier rechecks the linked dependencies. Each artifact records the root digest, dependency digests and call edges. The change gate compares imported public contracts and behavior as well as the root's observable results.

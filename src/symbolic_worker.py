@@ -20,6 +20,7 @@ class Encoding:
     def __init__(self, types):
         self.sorts = {"byte": z3.BitVecSort(8), "bool": z3.BoolSort()}
         self.variants = {}
+        self.summaries = {}
         self.record_fields = {}
         # Records may contain enums from either revision.
         for index, enum in enumerate(t for t in types if "variants" in t):
@@ -46,6 +47,27 @@ class Encoding:
     def variable(self, symbol, typ):
         return Term(z3.Const(symbol, self.sort(typ)))
 
+    def call_terms(self, name, values, flags):
+        # This request fixes types and flags. Baseline and candidate have distinct
+        # graphs. Instantiate the exact precondition and implementation summary.
+        key = (id(self.graph), name)
+        if key not in self.summaries:
+            names, requires, body, ensures = self.graph[name]
+            formals = [z3.FreshConst(v.value.sort()) for v in values]
+            env = {k: Term(v) for k, v in zip(names, formals, strict=True)}
+            pre = self.expression(requires, env, flags)
+            result = self.expression(body, env, flags)
+            post = self.expression(ensures, {**env, "result": Term(result.value)}, flags)
+            self.summaries[key] = (formals, pre, Term(result.value, z3.And(result.safe, post.safe, post.value)))
+        formals, pre, result = self.summaries[key]
+        bindings = list(zip(formals, [v.value for v in values], strict=True))
+
+        def instantiate(expr):
+            return z3.substitute(expr, *bindings) if bindings and not isinstance(expr, bool) else expr
+
+        return (Term(instantiate(pre.value), instantiate(pre.safe)),
+                Term(instantiate(result.value), instantiate(result.safe)))
+
     def expression(self, expr, env, flags):
         if isinstance(expr, bool):
             return Term(z3.BoolVal(expr))
@@ -65,6 +87,11 @@ class Encoding:
             bound = run(init)
             result = self.expression(body, {**env, name: Term(bound.value)}, flags)
             return Term(result.value, z3.And(bound.safe, result.safe))
+        if op == "apply":
+            name, actuals = args
+            values = [run(arg) for arg in actuals]
+            pre, result = self.call_terms(name, values, flags)
+            return Term(result.value, z3.And(*[v.safe for v in values], pre.safe, pre.value, result.safe))
         if op == "call":
             _, names, actuals, requires, body, ensures = args
             values = [run(arg) for arg in actuals]
@@ -154,6 +181,7 @@ class Encoding:
 def setup(request):
     f = request["function"]
     encoding = Encoding(request["types"])
+    encoding.graph = f.get("graph", {})
     env = {name: encoding.variable(f"p{i}", typ) for i, (name, typ) in enumerate(f["params"])}
     flags = {name: encoding.variable(f"g{i}", "bool") for i, name in enumerate(f["reads"])}
     solver = z3.Solver()
@@ -198,6 +226,7 @@ def compare(request):
     field = request["relation"]
 
     def holds(function, field, scope):
+        encoding.graph = function.get("graph", {})
         term = encoding.expression(function[field], scope, flags)
         return z3.And(term.safe, term.value)
 
@@ -212,7 +241,9 @@ def compare(request):
         solver.add(admitted_new, holds(new, field, scope), z3.Not(holds(old, field, scope)))
     elif field == "body":
         # Both complete functions have already been proven safe on admitted inputs.
+        encoding.graph = old.get("graph", {})
         a = encoding.expression(old[field], env, flags)
+        encoding.graph = new.get("graph", {})
         b = encoding.expression(new[field], env, flags)
         solver.add(admitted_new, a.value != b.value)
     else:

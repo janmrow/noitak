@@ -7,13 +7,13 @@ function equalValue(left, right) {
     keys.every(k => Object.hasOwn(right, k) && equalValue(left[k], right[k]));
 }
 
-function evaluate(expr, env, flags) {
+function evaluate(expr, env, flags, graph) {
   if (typeof expr === 'string') return env.get(expr);
   if (!Array.isArray(expr)) return expr;
   const [op, a, b, c] = expr;
-  const run = e => evaluate(e, env, flags);
+  const run = e => evaluate(e, env, flags, graph);
   switch (op) {
-    case 'let': return evaluate(c, new Map(env).set(a, run(b)), flags);
+    case 'let': return evaluate(c, new Map(env).set(a, run(b)), flags, graph);
     case 'if': return run(a) ? run(b) : run(c);
     case 'flag': return flags.get(a);
     case 'not': return !run(a);
@@ -22,12 +22,21 @@ function evaluate(expr, env, flags) {
     case '=': return equalValue(run(a), run(b));
     case 'make': return Object.fromEntries(b.map(([key, value]) => [key, run(value)]));
     case 'get': return run(a)[b];
+    case 'apply': {
+      const [names, pre, body, post] = graph[a];
+      const args = b.map(run);
+      const frame = new Map(names.map((name, i) => [name, args[i]]));
+      if (!evaluate(pre, frame, flags, graph)) throw new CallFault('CALL_PRECONDITION');
+      const value = evaluate(body, frame, flags, graph);
+      if (!evaluate(post, frame.set('result', value), flags, graph)) throw new CallFault('CALL_POSTCONDITION');
+      return value;
+    }
     case 'call': {
       const args = c.map(run);
       const frame = new Map(b.map((name, i) => [name, args[i]]));
-      if (!evaluate(expr[4], frame, flags)) throw new CallFault('CALL_PRECONDITION');
-      const value = evaluate(expr[5], frame, flags);
-      if (!evaluate(expr[6], frame.set('result', value), flags)) throw new CallFault('CALL_POSTCONDITION');
+      if (!evaluate(expr[4], frame, flags, graph)) throw new CallFault('CALL_PRECONDITION');
+      const value = evaluate(expr[5], frame, flags, graph);
+      if (!evaluate(expr[6], frame.set('result', value), flags, graph)) throw new CallFault('CALL_POSTCONDITION');
       return value;
     }
     case 'tag': return expr.length === 4 ? { tag: b, value: run(c) } : { tag: b };
@@ -35,7 +44,7 @@ function evaluate(expr, env, flags) {
       const subject = run(a);
       const [, binder, branch] = b.find(([tag]) => tag === subject.tag);
       const scope = binder ? new Map(env).set(binder, subject.value) : env;
-      return evaluate(branch, scope, flags);
+      return evaluate(branch, scope, flags, graph);
     }
     case '<': return run(a) < run(b);
     case '<=': return run(a) <= run(b);
@@ -59,11 +68,11 @@ function execute(f, args, flags) {
   const env = new Map(f.params.map(([key], i) => [key, args[i]]));
   let phase = 'requires';
   try {
-    if (!evaluate(f.requires, env, flags)) return error('PRECONDITION', phase);
+    if (!evaluate(f.requires, env, flags, f.graph)) return error('PRECONDITION', phase);
     phase = 'body';
-    const value = evaluate(f.body, env, flags);
+    const value = evaluate(f.body, env, flags, f.graph);
     phase = 'ensures';
-    if (!evaluate(f.ensures, env.set('result', value), flags)) return error('POSTCONDITION', phase);
+    if (!evaluate(f.ensures, env.set('result', value), flags, f.graph)) return error('POSTCONDITION', phase);
     return { ok: true, value };
   } catch (e) {
     if (e instanceof RangeFault) return error('ARITHMETIC', phase);
@@ -120,7 +129,7 @@ function invoke(f, flags, args) {
 function predicate(f, field, args, flags, result) {
   const env = new Map(f.params.map(([key], i) => [key, args[i]]));
   if (field === 'ensures') env.set('result', result);
-  try { return evaluate(f[field], env, flags); }
+  try { return evaluate(f[field], env, flags, f.graph); }
   catch (e) {
     if (e instanceof RangeFault) return 'arithmetic-fault';
     throw e;
