@@ -43,10 +43,18 @@ async function component(name) {
   const unit = compile(source);
   const proof = verify(unit,source,65536,'auto');
   assert.ok(proof.passed);
-  await build(unit,proof,join(dir,name));
-  const file = join(dir,name,'module.mjs');
+  const times = [];
+  let manifest, file;
+  for (let i=0; i<7; i++) {
+    const bundle = join(dir,name+'-'+i);
+    const start = performance.now();
+    manifest = await build(unit,proof,bundle);
+    if (i>=2) times.push(performance.now()-start);
+    file = join(bundle,'module.mjs');
+  }
   const {api} = await import(pathToFileURL(file));
-  console.log({version:VERSION, node:process.version, name, esmBytes:(await stat(file)).size});
+  console.log({version:VERSION, node:process.version, name, esmBytes:(await stat(file)).size,
+    buildMs:Number(times.sort((a,b)=>a-b)[2].toFixed(2)), artifactChecks:manifest.artifactValidation?.checks});
   return {api, unit};
 }
 

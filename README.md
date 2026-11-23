@@ -1,6 +1,8 @@
-# Noitak 0.6
+# Noitak 0.7
 
 Noitak aims to become a practical programming language for software built primarily by AI agents, where safety, verifiable guarantees, and change control are first-class parts of programming. Today it compiles pure, contracted components into standalone JavaScript with TypeScript declarations. [Project philosophy](docs/philosophy.md)
+
+Version 0.7 emits checked JavaScript expressions and loops for deployment. Build and gate run the emitted module against the reference interpreter before publishing a bundle. The manifest identifies the exact ESM and declarations and reports how many comparison calls returned a value. [Evidence and limitations](docs/verification.md)
 
 ## Use a component in TypeScript
 
@@ -16,15 +18,18 @@ python -m pip install -r requirements-symbolic.txt
 npm run release:check -- build/distribution
 ```
 
-In a TypeScript application, install the checked tarball as a dev dependency. These commands assume the tarball is in the project root, TypeScript is installed, and the Python build environment is active.
+In a TypeScript application, install the checked tarball as a dev dependency. Place the tarball and its SHA256SUMS from the trusted release in the project root. These commands assume TypeScript is installed and the Python build environment is active.
 
 ```sh
-npm install --save-dev ./noitak-0.6.0.tgz
+sha256sum --check SHA256SUMS
+npm install --save-dev ./noitak-0.7.0.tgz
 python -m pip install -r node_modules/noitak/requirements-symbolic.txt
 npx --no-install noitak verify node_modules/noitak/pilot/metering/metering.noi --engine auto
 npx --no-install noitak build node_modules/noitak/pilot/metering/metering.noi meter/verified --engine auto
 cp node_modules/noitak/pilot/metering/service.mts meter/service.mts
 npx --no-install tsc --strict --module nodenext meter/service.mts
+cp node_modules/noitak/pilot/metering/demo.mjs meter/demo.mjs
+node meter/demo.mjs
 ```
 
 Import `MeterStore` from `./meter/service.mjs` or call `api.reconcile(flags, account, readings)` from the generated module. Ship the ESM with the application. Python and Z3 run only at build time. For updates, use a trusted baseline, edit a separate candidate, and consume the fresh candidate bundle after a successful gate.
@@ -33,7 +38,7 @@ Import `MeterStore` from `./meter/service.mjs` or call `api.reconcile(flags, acc
 npx --no-install noitak gate baseline/metering.noi candidate/metering.noi next/verified --engine auto
 ```
 
-The release check installs the package offline, makes a real implementation edit, gates it and runs a strict TypeScript consumer against the approved bytes. Read the assessment for timings, security assumptions and migration details. [0.6 engineering assessment](docs/release-0.6.md)
+The release check installs the package offline, makes a real implementation edit, gates it and runs a strict TypeScript consumer against the approved bytes. Read the assessment for timings, security assumptions and migration details. [0.7 engineering assessment](docs/release-0.7.md)
 
 ## Run the support workflow
 

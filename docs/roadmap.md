@@ -1,6 +1,12 @@
 # Noitak roadmap
 
-## Proposed 0.7 milestone
+## 0.7 disposition
+
+Checked JavaScript lowering and typed record readers moved IR dispatch and lexical maps out of the shipping artifact. The verifier retains its interpreter. The gate tests the emitted module in a separate worker and records comparison coverage. The metering and tenant workloads now run several times faster, with a measurable increase in bundle creation time. [0.7 evidence](release-0.7.md)
+
+The remaining adoption question is how to exercise the paths an application depends on when few typed inputs pass admission. The new checker can return precise evidence of zero admitted samples. Existing source vectors and strict host tests provide application examples. A future milestone could bind independently owned application cases to the reviewed bundle and measure how often they add coverage beyond generic probes. The correctness of a business specification and real host authorization remain external decisions.
+
+## Original 0.7 proposal
 
 The metering reducer moved the ordering loop, checked quantities, and tenant-sized identifiers into Noitak. The invariant proof cost is independent of batch length, while the runtime cost grows with each reading. The interpreter dispatches IR, allocates lexical environments, copies inputs, and reevaluates contracts throughout the loop. The independent TypeScript model is much faster on trusted values. The benchmark measures the aggregate and does not attribute it to individual operations. [0.6 measurements](release-0.6.md)
 

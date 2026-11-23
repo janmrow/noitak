@@ -2,10 +2,11 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { publishDirectory } from '../src/backend.mjs';
 import { VERSION } from '../src/verify.mjs';
 
 const root = fileURLToPath(new URL('../',import.meta.url));
@@ -15,12 +16,18 @@ assert.equal(pkg.version,VERSION);
 assert.equal(JSON.parse(readFileSync(join(root,'package-lock.json'))).packages[''].version,VERSION);
 if (process.env.GITHUB_REF_TYPE === 'tag') assert.equal(process.env.GITHUB_REF_NAME, 'v'+VERSION);
 mkdirSync(dirname(output),{recursive:true});
-mkdirSync(output);
-const host = mkdtempSync(join(tmpdir(),'noitak-install-'));
+if (existsSync(output)) throw new Error('Release destination already exists: ' + output);
+const scratch = mkdtempSync(join(tmpdir(),'noitak-install-'));
+const host = join(scratch,'consumer');
+const deployment = join(scratch,'deployment');
+let staged;
 const run = (cmd,args,cwd) => execFileSync(cmd,args,{cwd,encoding:'utf8',stdio:['ignore','pipe','pipe']});
 try {
-  const [pack] = JSON.parse(run('npm',['pack','--ignore-scripts','--json','--pack-destination',output],root));
-  const archive = join(output,pack.filename);
+  mkdirSync(host);
+  mkdirSync(deployment);
+  staged = mkdtempSync(join(dirname(output),'.noitak-distribution-'));
+  const [pack] = JSON.parse(run('npm',['pack','--ignore-scripts','--json','--pack-destination',staged],root));
+  const archive = join(staged,pack.filename);
   const digest = createHash('sha256').update(readFileSync(archive)).digest('hex');
   writeFileSync(join(host,'package.json'),JSON.stringify({name:'consumer',private:true,type:'module'}));
   run('npm',['install','--offline','--ignore-scripts','--no-audit','--no-fund',archive],host);
@@ -45,21 +52,28 @@ try {
   writeFileSync(join(host,'next.noi'),rewrite);
   const accepted = JSON.parse(run(cli,['gate',baseline,'next.noi','meter/verified','--engine','auto','--json'],host));
   assert.ok(accepted.passed && accepted.changes.some(c=>c.scope==='one-transition' && c.status==='compatible'));
+  const manifest = JSON.parse(readFileSync(join(host,'meter/verified/report.json')));
+  assert.equal(manifest.backend,'checked-js-v1');
+  assert.equal(manifest.artifactValidation.status,'tested');
+  assert.deepEqual(manifest.artifactValidation,accepted.artifactValidation);
+  for (const [file,expected] of Object.entries(manifest.artifacts)) {
+    const actual = createHash('sha256').update(readFileSync(join(host,'meter/verified',file))).digest('hex');
+    assert.equal(actual,expected,file);
+  }
   copyFileSync(join(pilot,'service.mts'),join(host,'meter/service.mts'));
   run(process.execPath,[join(root,'node_modules/typescript/bin/tsc'),'--strict','--module','nodenext','meter/service.mts'],host);
-  const {MeterStore} = await import(pathToFileURL(join(host,'meter/service.mjs')));
-  const meter = '00112233-4455-6677-8899-aabbccddeeff';
-  const account = {meter, limit:1000000, used:0, serial:100000, status:{tag:'ready'}};
-  const accounts = new Map([[meter,account]]);
-  const store = new MeterStore(accounts);
-  const readings = Array.from({length:1000},(_,i)=>({meter,serial:100001+i,units:1000}));
-  assert.deepEqual(store.submit(meter,[...readings,{meter,serial:101001,units:1}]),
-    {status:'rejected',reason:'quota_exceeded'});
-  assert.equal(accounts.get(meter),account);
-  assert.deepEqual(store.submit(meter,readings),{status:'committed',serial:101000,used:1000000});
-  assert.equal(store.submit(meter,[{...readings[0],units:NaN}]).status,'invalid-input');
-  console.log('Installed reducer update, strict TS consumer and all-or-nothing host update passed.');
-  writeFileSync(join(output,'SHA256SUMS'),digest+'  '+basename(archive)+'\n');
+  mkdirSync(join(deployment,'verified'));
+  copyFileSync(join(host,'meter/service.mjs'),join(deployment,'service.mjs'));
+  copyFileSync(join(host,'meter/verified/module.mjs'),join(deployment,'verified/module.mjs'));
+  copyFileSync(join(pilot,'demo.mjs'),join(deployment,'demo.mjs'));
+  const smoke = execFileSync(process.execPath,['--disallow-code-generation-from-strings','demo.mjs'],
+    {cwd:deployment,encoding:'utf8',env:{PATH:''}});
+  console.log('Standalone metering consumer passed.',smoke.trim());
+  writeFileSync(join(staged,'SHA256SUMS'),digest+'  '+basename(archive)+'\n');
+  await publishDirectory(staged,output);
   console.log('Installed CLI, packaged solver, gated bundle and host call passed.');
   console.log(digest, basename(archive));
-} finally { rmSync(host,{recursive:true,force:true}); }
+} finally {
+  if (staged) rmSync(staged,{recursive:true,force:true});
+  rmSync(scratch,{recursive:true,force:true});
+}

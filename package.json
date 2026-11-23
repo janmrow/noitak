@@ -1,6 +1,6 @@
 {
   "name": "noitak",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "license": "Apache-2.0",
   "private": true,
   "type": "module",
@@ -36,8 +36,10 @@
     "docs/architecture.md",
     "docs/release-0.5.md",
     "docs/release-0.6.md",
+    "docs/release-0.7.md",
     "pilot/metering/metering.noi",
     "pilot/metering/service.mts",
+    "pilot/metering/demo.mjs",
     "pilot/metering/reference.mts",
     "pilot/access/access.noi",
     "examples/quota.noi",
