@@ -101,7 +101,7 @@ test('materialized public result has no observable alias dependent on private in
 });
 
 test('independent transition table checks all emitted transitions, views and routes', async t => {
-  const src = await readFile('pilot/support/tickets.noi','utf8');
+  const src = await readFile('pilot/support/support.noi','utf8');
   const root = await mkdtemp(join(tmpdir(), 'noitak-oracle-'));
   t.after(() => rm(root, {recursive:true, force:true}));
   const unit = compile(src);

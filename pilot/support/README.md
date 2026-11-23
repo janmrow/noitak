@@ -2,7 +2,7 @@
 
 A TypeScript service holds customer-visible ticket state and staff-only routing context for each row. Customers can reopen a ticket by replying. An agent reply waits for the customer. Resolution closes the ticket. Every public event consumes one revision. A private note preserves the public snapshot, including at revision 255. The host handles revision exhaustion as an explicit application result.
 
-[tickets.noi](tickets.noi) defines three operations. `transition` computes the next ticket using two private helpers. `public_view` projects its customer response and promises independence from the entire staff context. `route` uses that same context to send open escalations to an on-call queue when staff coverage exists. [service.mts](service.mts) owns storage, missing-ticket handling and dispatch. It compiles against the generated declarations and imports the approved ESM.
+[support.noi](support.noi) defines three operations. `transition` computes the next ticket using two private helpers. `public_view` projects its customer response and promises independence from the entire staff context. `route` uses that same context to send open escalations to an on-call queue when staff coverage exists. [service.mts](service.mts) owns storage, missing-ticket handling and dispatch. It compiles against the generated declarations and imports the approved ESM.
 
 After installing the README dependencies and activating the Python environment:
 
@@ -21,3 +21,11 @@ The runner creates a fresh directory, saves each exact candidate source and CLI 
 The accepted host scenario reopens T42, dispatches once, resolves it at revision 255, accepts a private note, then rejects another public edit. An independent table in the default test suite also checks the emitted functions across every typed state and event or staff-context assignment.
 
 The baseline requirement, trusted revision selection, host database, authorization, queue delivery and correctness of the host's choice of projection are outside the proof. This is an in-memory integration experiment. Byte-sized revisions deliberately make rollover a reachable test case. A production service would need a larger revision type and an atomic persistence strategy.
+
+## Ordered event batches
+
+`batch.noi` imports the original support module by name and content digest. A batch contains zero through three events. On success it returns the final ticket. On failure it returns the index of the first inadmissible event. The ordinary contract folds an independently written ticket specification over the input. The body uses the imported transition. A second obligation protects the entire outcome, including the failure index, against changes to staff context.
+
+With the symbolic environment active, run `npm run pilot:batch -- build/batch` using a fresh destination. The runner saves the candidate sources and the review for each case. It accepts an imported arithmetic rewrite and refuses reversed events, a partial commit, a staff-dependent failure index, removal of the independence promise and additional authority. The staff-dependent candidate also relaxes the ordinary contract to isolate the two-run evidence. Every refused candidate must leave its artifact path absent.
+
+The pilot also checks a low enumeration budget, completes exhaustive baseline verification at 261,120 cases, compiles the TypeScript batch host and compares the gated ESM with an independent sequential event table on the full domain. Its Map-backed host stores a new ticket only after `committed`. A production owner must coordinate concurrent updates at the persistence boundary, for example with a transaction or revision check.

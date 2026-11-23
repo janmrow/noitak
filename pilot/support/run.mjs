@@ -10,7 +10,7 @@ const root = resolve(here, '../..');
 const output = resolve(process.argv[2] ?? 'build/support');
 mkdirSync(dirname(output), { recursive: true });
 mkdirSync(output);
-const baseline = join(here, 'tickets.noi');
+const baseline = join(here, 'support.noi');
 const original = readFileSync(baseline, 'utf8');
 function run(args, expected = 0) {
   const proc = spawnSync(process.execPath, args, { encoding: 'utf8', cwd: root });

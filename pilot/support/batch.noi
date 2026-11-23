@@ -1,0 +1,28 @@
+(module support_batch 0.5.0
+  (import support 435809d39ccdd78a8c0ef8c4dc8225a3b17a717043be7e9e9496b560de3d2b5c)
+  (sequence events support.event 3)
+  (outcome decision support.ticket)
+
+  (fn apply_batch ((prior support.ticket) (events events) (staff support.staff)) decision
+    (reads) (independent staff)
+    (requires true)
+    ; Specify order, capacity, first rejection and complete returned ticket
+    ; independently of the imported transition implementation.
+    (ensures (= result
+      (fold events (tag decision committed prior) (expected action index)
+        (match expected
+          (rejected first expected)
+          (committed ticket
+            (if (= action (tag support.event staff_note)) expected
+              (if (= (get ticket revision) 255) (tag decision rejected index)
+                (tag decision committed (make support.ticket
+                  (stage (match action
+                    (customer_reply (tag support.stage open))
+                    (agent_reply (tag support.stage waiting))
+                    (resolve (tag support.stage closed))
+                    (staff_note (get ticket stage))))
+                  (revision (+ (get ticket revision) 1)))))))))))
+    (fold events (tag decision committed prior) (acc action index)
+      (match acc
+        (rejected first acc)
+        (committed ticket (attempt decision index support.transition ticket action))))))

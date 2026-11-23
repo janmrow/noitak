@@ -175,7 +175,7 @@ test('gate builds from the compared revision and keeps an earlier bundle intact 
 
 test('record declaration enforces shape and private helpers stay off the TypeScript API', t => {
   const dir = temporary(t);
-  cli(['build','pilot/support/tickets.noi',join(dir,'support')]);
+  cli(['build','pilot/support/support.noi',join(dir,'support')]);
   const host = join(dir,'host.mts');
   writeFileSync(host, `import { api, type Record_ticket } from './support/module.mjs';
 const ticket: Record_ticket = {stage:{tag:'open'},revision:17};

@@ -29,8 +29,8 @@ The pilot gates three revisions, compiles a strict TypeScript ticket service aga
 With Node alone you can enumerate the baseline and run five host-boundary vectors:
 
 ```sh
-node noitak.mjs verify pilot/support/tickets.noi --json
-node noitak.mjs test pilot/support/tickets.noi examples/support-vectors.json
+node noitak.mjs verify pilot/support/support.noi --json
+node noitak.mjs test pilot/support/support.noi examples/support-vectors.json
 ```
 
 ## Run the scalar example
