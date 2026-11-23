@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { argument, invoke, predicate } from './runtime.mjs';
 
-export const symbolicConfig = { method: 'z3-bv8-datatypes-v1', timeoutMsPerQuery: 3000, timeoutMsPerWorker: 10000 };
+export const symbolicConfig = { method: 'z3-bv8-datatypes-v2', timeoutMsPerQuery: 3000, timeoutMsPerWorker: 10000 };
 const worker = fileURLToPath(new URL('./symbolic_worker.py', import.meta.url));
 
 const unknown = reason => ({ status: 'unverified', reason });
@@ -38,8 +38,8 @@ function query(request, spawn) {
   return answer;
 }
 
-export function solve(f, enums, spawn = spawnSync) {
-  const answer = query({ function: f, enums }, spawn);
+export function solve(f, types, spawn = spawnSync) {
+  const answer = query({ function: f, types }, spawn);
   if (answer.status === 'unverified') return answer;
   const { solverVersion } = answer;
   if (answer.status === 'proven' && hasFields(answer, 'status', 'solverVersion', 'safety', 'admission') &&
@@ -50,9 +50,11 @@ export function solve(f, enums, spawn = spawnSync) {
         answer.reason === 'empty-admission-domain' && answer.safety === 'unsat' && answer.admission === 'unsat')
       return answer;
     if (hasFields(answer, 'status', 'solverVersion', 'input') && validModel(answer.input)) {
-      const { args, flags } = answer.input;
+      const model = typedInput(f, answer.input);
+      if (!model) return unknown('model-replay-disagreement');
+      const {args, flags} = model;
       const outcome = invoke(f, flags, args);
-      if (['POSTCONDITION','ARITHMETIC'].includes(outcome.code))
+      if (['POSTCONDITION','ARITHMETIC','CALL_PRECONDITION','CALL_POSTCONDITION'].includes(outcome.code))
         return { status: 'violated', solverVersion, counterexample: {args, flags, outcome} };
       return unknown('model-replay-disagreement');
     }
@@ -60,12 +62,18 @@ export function solve(f, enums, spawn = spawnSync) {
   return unknown('invalid-worker-response');
 }
 
+function typedInput(f, input) {
+  if (input.args.length !== f.params.length) return;
+  const args = f.params.map(([,type], i) => argument(type, input.args[i]));
+  if (args.includes(undefined) || f.reads.some(k => !Object.hasOwn(input.flags,k) || typeof input.flags[k] !== 'boolean')) return;
+  const grants = new Map(f.reads.map(k => [k, input.flags[k]]));
+  return { args, grants, flags: Object.fromEntries(grants) };
+}
+
 function replay(old, next, field, input) {
-  if (input.args.length !== old.params.length) return;
-  const args = old.params.map(([,type], i) => argument(type, input.args[i]));
-  if (args.includes(undefined) || old.reads.some(k => typeof input.flags[k] !== 'boolean')) return;
-  const grants = new Map(old.reads.map(k => [k, input.flags[k]]));
-  const flags = Object.fromEntries(grants);
+  const model = typedInput(old,input);
+  if (!model) return;
+  const {args, grants, flags} = model;
   const oldPre = predicate(old, 'requires', args, grants);
   const newPre = predicate(next, 'requires', args, grants);
   if (oldPre !== true) return;
@@ -87,8 +95,8 @@ function replay(old, next, field, input) {
   }
 }
 
-export function solveRelation(old, next, enums, field, spawn = spawnSync) {
-  const answer = query({ function: old, candidate: next, enums, relation: field }, spawn);
+export function solveRelation(old, next, types, field, spawn = spawnSync) {
+  const answer = query({ function: old, candidate: next, types, relation: field }, spawn);
   const {solverVersion} = answer;
   if (answer.status === 'unverified') return { status: 'undetermined', reason: answer.reason, solverVersion };
   if (answer.relation !== field) return { status: 'undetermined', reason: 'invalid-worker-response' };

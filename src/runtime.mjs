@@ -1,4 +1,12 @@
 // This file is also copied into each standalone ES module.
+function equalValue(left, right) {
+  if (left === right) return true;
+  if (typeof left !== 'object' || typeof right !== 'object') return false;
+  const keys = Object.keys(left);
+  return keys.length === Object.keys(right).length &&
+    keys.every(k => Object.hasOwn(right, k) && equalValue(left[k], right[k]));
+}
+
 function evaluate(expr, env, flags) {
   if (typeof expr === 'string') return env.get(expr);
   if (!Array.isArray(expr)) return expr;
@@ -11,9 +19,16 @@ function evaluate(expr, env, flags) {
     case 'not': return !run(a);
     case 'and': return run(a) && run(b);
     case 'or': return run(a) || run(b);
-    case '=': {
-      const left = run(a), right = run(b);
-      return typeof left === 'object' ? left.tag === right.tag && left.value === right.value : left === right;
+    case '=': return equalValue(run(a), run(b));
+    case 'make': return Object.fromEntries(b.map(([key, value]) => [key, run(value)]));
+    case 'get': return run(a)[b];
+    case 'call': {
+      const args = c.map(run);
+      const frame = new Map(b.map((name, i) => [name, args[i]]));
+      if (!evaluate(expr[4], frame, flags)) throw new CallFault('CALL_PRECONDITION');
+      const value = evaluate(expr[5], frame, flags);
+      if (!evaluate(expr[6], frame.set('result', value), flags)) throw new CallFault('CALL_POSTCONDITION');
+      return value;
     }
     case 'tag': return expr.length === 4 ? { tag: b, value: run(c) } : { tag: b };
     case 'match': {
@@ -35,6 +50,9 @@ function evaluate(expr, env, flags) {
 }
 
 class RangeFault extends Error {}
+class CallFault extends Error {
+  constructor(code) { super(code); this.code = code; }
+}
 const error = (code, phase) => ({ ok: false, code, phase });
 
 function execute(f, args, flags) {
@@ -49,6 +67,7 @@ function execute(f, args, flags) {
     return { ok: true, value };
   } catch (e) {
     if (e instanceof RangeFault) return error('ARITHMETIC', phase);
+    if (e instanceof CallFault) return error(e.code, phase);
     throw e;
   }
 }
@@ -57,6 +76,15 @@ function argument(type, value) {
   if (type === 'bool') return typeof value === 'boolean' ? value : undefined;
   if (type === 'byte') return Number.isInteger(value) && value >= 0 && value <= 255 ? value + 0 : undefined;
   if (value === null || typeof value !== 'object') return undefined;
+  if (type.fields) {
+    const copy = {};
+    for (const [key, fieldType] of type.fields) {
+      const field = argument(fieldType, Object.getOwnPropertyDescriptor(value, key)?.value);
+      if (field === undefined) return undefined;
+      Object.defineProperty(copy, key, { value: field, enumerable: true, writable: true, configurable: true });
+    }
+    return copy;
+  }
   const tag = Object.getOwnPropertyDescriptor(value, 'tag')?.value;
   const variant = type.variants.find(v => v.tag === tag);
   if (!variant) return undefined;
@@ -82,7 +110,11 @@ function invoke(f, flags, args) {
   } catch {
     return error('CAPABILITY', 'boundary');
   }
-  return execute(f, values, snapshot);
+  const outcome = execute(f, values, snapshot);
+  // Materialize a fresh value tree so JS reference aliases cannot expose which
+  // source expression produced equal structured results.
+  if (outcome.ok) outcome.value = argument(f.output, outcome.value);
+  return outcome;
 }
 
 function predicate(f, field, args, flags, result) {

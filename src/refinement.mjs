@@ -5,8 +5,8 @@ import { predicate } from './runtime.mjs';
 // shared admitted input must satisfy the original guarantee.
 export function refinement(old, next, field, limit) {
   const domain = domainOf(old);
-  const results = field === 'ensures' ? cardinality(old.output) : 1;
-  const cost = domain.total * BigInt(results);
+  const results = field === 'ensures' ? cardinality(old.output) : 1n;
+  const cost = domain.total * results;
   if (cost > BigInt(limit))
     return { status: 'undetermined', reason: 'comparison-budget', comparisonDomain: String(cost) };
   let examined = 0;

@@ -14,6 +14,10 @@ export function formatReview(report) {
     if (claims[c.field]) {
       lines.push('Review claim: ' + claims[c.field]);
       lines.push(`Method: ${c.method}. Potential cases: ${c.comparisonDomain}`);
+      if (c.field === 'body') {
+        const calls = new Set([...(report.before.calls?.[c.subject] ?? []), ...(report.after.calls?.[c.subject] ?? [])]);
+        if (calls.size) lines.push('Direct helper calls: ' + [...calls].join(', '));
+      }
       if (c.solverAnswer) lines.push(`Counterexample query: ${c.solverAnswer} (Z3 ${c.solverVersion})`);
       if (c.examined !== undefined) lines.push('Predicate comparisons: ' + c.examined);
       if (c.equalOutcomes) lines.push('Equal returned values: ' + c.equalOutcomes);
@@ -26,7 +30,7 @@ export function formatReview(report) {
         lines.push('Baseline ' + JSON.stringify(w.before) + ', candidate ' + JSON.stringify(w.after));
       }
     } else if (c.proofStatus) {
-      lines.push('Required function proof: ' + c.proofStatus);
+      lines.push('Required proof: ' + c.property + ' · ' + c.proofStatus);
       if (c.reason === 'case-budget') lines.push(
         `The domain contains ${c.proofDomain} cases. The configured limit is ${report.configuration.maxCasesPerFunction}.`);
       if (c.counterexample) lines.push('Counterexample: ' + JSON.stringify(c.counterexample));
@@ -35,9 +39,11 @@ export function formatReview(report) {
       if (c.field === 'reads' && c.status === 'policy-violation')
         lines.push('Review the additional authority required from the host.');
     }
+    if (c.crosscheck) lines.push('Enumeration cross-check: ' + c.crosscheck.status +
+      (c.crosscheck.reason ? ' (' + c.crosscheck.reason + ')' : ''));
     if (c.reason) lines.push('Reason: ' + c.reason);
   }
-  if (!report.changes.length) lines.push('No structural changes detected.');
+  if (!report.changes.length) lines.push('No findings under the change policy.');
   if (report.artifact) lines.push('', 'Published verified artifact: ' + report.artifact);
   return lines.join('\n');
 }

@@ -2,19 +2,25 @@ import { readFile, mkdir, mkdtemp, writeFile, rename, rm, rmdir, lstat } from 'n
 import { dirname, resolve, join } from 'node:path';
 import { hash } from './verify.mjs';
 
-const ts = t => t === 'byte' ? 'number' : t === 'bool' ? 'boolean' : 'Enum_' + t.name;
+const ts = t => t === 'byte' ? 'number' : t === 'bool' ? 'boolean' : (t.fields ? 'Record_' : 'Enum_') + t.name;
 
-function declarations({ functions, enums }) {
+function declarations({ functions, enums, records }) {
   const lines = [
-    "export type Result<T> = { ok: true; value: T } | { ok: false; code: 'ARGUMENT' | 'CAPABILITY' | 'ARITHMETIC' | 'PRECONDITION' | 'POSTCONDITION'; phase: 'boundary' | 'requires' | 'body' | 'ensures' };",
+    "export type Result<T> = { ok: true; value: T } | { ok: false; code: 'ARGUMENT' | 'CAPABILITY' | 'ARITHMETIC' | 'PRECONDITION' | 'POSTCONDITION' | 'CALL_PRECONDITION' | 'CALL_POSTCONDITION'; phase: 'boundary' | 'requires' | 'body' | 'ensures' };",
   ];
   for (const e of enums) {
     const members = e.variants.map(({tag, payload}) =>
       '{ readonly tag: ' + JSON.stringify(tag) + (payload ? '; readonly value: ' + ts(payload) : '') + ' }');
     lines.push('export type ' + ts(e) + ' = ' + members.join(' | ') + ';');
   }
+  for (const record of records) {
+    const fields = record.fields.map(([key, t]) => 'readonly ' + key + ': ' + ts(t));
+    lines.push('export type ' + ts(record) + ' = { ' + fields.join('; ') + ' };');
+  }
   lines.push('export declare const api: {');
-  for (const f of functions) {
+  for (const f of functions.filter(f => f.kind === 'fn')) {
+    if (f.independent.length)
+      lines.push('  /** Verified admission and return value independence from ' + f.independent.join(', ') + '. */');
     const flags = f.reads.map(k => 'readonly ' + k + ': boolean').join('; ');
     const params = f.params.map(([name, t]) => 'arg_' + name + ': ' + ts(t));
     lines.push('  readonly ' + f.name + ': (' + ['flags: { ' + flags + ' } & object', ...params].join(', ') +
@@ -39,10 +45,14 @@ export async function publishDirectory(staged, target) {
 export async function build(unit, report, destination, review) {
   if (!report.passed) throw new Error('Required proof failed');
   const runtime = await readFile(new URL('./runtime.mjs', import.meta.url), 'utf8');
-  const core = runtime.replace('export { argument, execute, invoke, predicate };', '');
-  const functions = JSON.stringify(unit.functions.map(({loc, ...f}) => f));
+  const exports = 'export { argument, execute, invoke, predicate };';
+  if (!runtime.trimEnd().endsWith(exports)) throw new Error('Unexpected runtime export layout');
+  const core = runtime.trimEnd().slice(0, -exports.length);
+  const functions = JSON.stringify(unit.functions.filter(f => f.kind === 'fn').map(({loc, ...f}) => f));
   const js = core + '\nconst functions = ' + functions + ';\n' +
-    'export const api = Object.freeze(Object.fromEntries(functions.map(f => [f.name, (flags, ...args) => invoke(f, flags, args)])));\n';
+    'export const api = Object.create(null);\n' +
+    'for (const f of functions) api[f.name] = (flags, ...args) => invoke(f, flags, args);\n' +
+    'Object.freeze(api);\n';
   const types = declarations(unit);
   const files = new Map([['module.mjs', js], ['module.d.mts', types]]);
   if (review) {

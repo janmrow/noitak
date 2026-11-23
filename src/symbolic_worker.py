@@ -17,10 +17,12 @@ class Term:
 
 
 class Encoding:
-    def __init__(self, enums):
+    def __init__(self, types):
         self.sorts = {"byte": z3.BitVecSort(8), "bool": z3.BoolSort()}
         self.variants = {}
-        for index, enum in enumerate(enums):
+        self.record_fields = {}
+        # Records may contain enums from either revision.
+        for index, enum in enumerate(t for t in types if "variants" in t):
             datatype = z3.Datatype(f"E{index}")
             for i, variant in enumerate(enum["variants"]):
                 payload = variant["payload"]
@@ -30,9 +32,19 @@ class Encoding:
             self.sorts[enum["name"]] = sort
             self.variants[sort.name()] = {v["tag"]: i for i, v in enumerate(enum["variants"])}
 
+        for index, record in enumerate(t for t in types if "fields" in t):
+            datatype = z3.Datatype(f"R{index}")
+            fields = [(f"r{index}_{i}", self.sort(typ)) for i, (_, typ) in enumerate(record["fields"])]
+            datatype.declare(f"mk{index}", *fields)
+            sort = datatype.create()
+            self.sorts[record["name"]] = sort
+            self.record_fields[sort.name()] = {k: i for i, (k, _) in enumerate(record["fields"])}
+
+    def sort(self, typ):
+        return self.sorts[typ if isinstance(typ, str) else typ["name"]]
+
     def variable(self, symbol, typ):
-        key = typ if isinstance(typ, str) else typ["name"]
-        return Term(z3.Const(symbol, self.sorts[key]))
+        return Term(z3.Const(symbol, self.sort(typ)))
 
     def expression(self, expr, env, flags):
         if isinstance(expr, bool):
@@ -53,6 +65,25 @@ class Encoding:
             bound = run(init)
             result = self.expression(body, {**env, name: Term(bound.value)}, flags)
             return Term(result.value, z3.And(bound.safe, result.safe))
+        if op == "call":
+            _, names, actuals, requires, body, ensures = args
+            values = [run(arg) for arg in actuals]
+            frame = {k: Term(v.value) for k, v in zip(names, values, strict=True)}
+            pre = self.expression(requires, frame, flags)
+            result = self.expression(body, frame, flags)
+            post = self.expression(ensures, {**frame, "result": Term(result.value)}, flags)
+            return Term(result.value, z3.And(*[v.safe for v in values], pre.safe, pre.value,
+                                             result.safe, post.safe, post.value))
+        if op == "make":
+            name, fields = args
+            values = [run(expr) for _, expr in fields]
+            return Term(self.sorts[name].constructor(0)(*[v.value for v in values]),
+                        z3.And(*[v.safe for v in values]))
+        if op == "get":
+            record = run(args[0])
+            sort = record.value.sort()
+            index = self.record_fields[sort.name()][args[1]]
+            return Term(sort.accessor(0, index)(record.value), record.safe)
         if op == "tag":
             name, tag, *payload = args
             sort = self.sorts[name]
@@ -108,6 +139,8 @@ class Encoding:
             return value.as_long()
         if typ == "bool":
             return z3.is_true(value)
+        if "fields" in typ:
+            return {k: self.decode(value.arg(i), t) for i, (k, t) in enumerate(typ["fields"])}
         sort = self.sorts[typ["name"]]
         for i, variant in enumerate(typ["variants"]):
             if value.decl() == sort.constructor(i):
@@ -120,7 +153,7 @@ class Encoding:
 
 def setup(request):
     f = request["function"]
-    encoding = Encoding(request["enums"])
+    encoding = Encoding(request["types"])
     env = {name: encoding.variable(f"p{i}", typ) for i, (name, typ) in enumerate(f["params"])}
     flags = {name: encoding.variable(f"g{i}", "bool") for i, name in enumerate(f["reads"])}
     solver = z3.Solver()
