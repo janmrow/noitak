@@ -86,7 +86,7 @@ export function domainOf(f) {
   return { total, cases, at };
 }
 
-// Deterministic typed probes for domains without mixed-radix positions.
+// Deterministic typed probes without decoding a mixed-radix position.
 // Seed zero also supplies the canonical value for independence replay.
 export function sampleValue(type, seed) {
   if (type === 'text') {
@@ -100,7 +100,9 @@ export function sampleValue(type, seed) {
   if (type.fields) return Object.fromEntries(type.fields.map(([key, field], i) =>
     [key, sampleValue(field, seed && seed + i)]));
   if (type.element) {
-    const length = seed % 7 === 2 ? type.capacity : seed % (type.capacity + 1);
+    const cap = type.capacity;
+    const lengths = [...new Set([0, 1, 2, 8, 255, 256, cap - 1, cap].filter(n => n <= cap))];
+    const length = lengths[seed % lengths.length];
     return Array.from({length}, (_, i) => sampleValue(type.element, seed + i));
   }
   const {tag, payload} = type.variants[seed % type.variants.length];

@@ -4,6 +4,13 @@ import { isDeepStrictEqual, promisify } from 'node:util';
 import { domainOf, sampleValue } from './domain.mjs';
 import { invoke } from './runtime.mjs';
 
+function hasLargeSequence(type) {
+  if (typeof type === 'string') return false;
+  if (type.element) return type.capacity > 8 || hasLargeSequence(type.element);
+  if (type.fields) return type.fields.some(([, field]) => hasLargeSequence(field));
+  return type.variants.some(({payload}) => payload && hasLargeSequence(payload));
+}
+
 function check(api, entries, witnesses, vectors) {
   for (const v of vectors)
     if (!entries.some(f => f.name === v?.fn) || !Array.isArray(v.args) || typeof v.expected?.ok !== 'boolean')
@@ -13,7 +20,8 @@ function check(api, entries, witnesses, vectors) {
     const params = f.collector ? [['row', f.params[0][1].element]] : f.params;
     const domain = domainOf({...f, params});
     const hostArgs = args => f.collector ? [args] : f.capacity ? [args[0],[args[1]]] : args;
-    const positioned = domain.total !== null;
+    const positioned = domain.total !== null &&
+      (domain.total <= 64n || !params.some(([, type]) => hasLargeSequence(type)));
     const count = positioned ? Number(domain.total < 64n ? domain.total : 64n) : 16;
     function sample(i) {
       if (positioned) return domain.at(count === 1 ? 0n : BigInt(i)*(domain.total-1n)/BigInt(count-1));
@@ -44,7 +52,6 @@ function check(api, entries, witnesses, vectors) {
     }
     let witness;
     for (let i=0; i<count; i++) {
-      // Mixed radix positions include both ends. Small step domains are visited in full.
       const {args,flags} = sample(i);
       const grants = Object.fromEntries(flags);
       witness = probe(grants,hostArgs(args),'typed-sample');
