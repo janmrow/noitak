@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {runInNewContext} from 'node:vm';
 import {checkArtifact} from '../src/artifact-check.mjs';
 import {compare} from '../src/diff.mjs';
 import {emitModule} from '../src/emitter.mjs';
@@ -58,6 +59,22 @@ test('lookup rejects malformed replies and models a failed host read explicitly'
   assert.equal(accessorCalls,0);
   assert.deepEqual(run(()=>{throw new Error('private message');}),ok(false));
   assert.throws(()=>grantLookup('directory',Array(4097).fill('x'),()=>true),TypeError);
+});
+
+test('rejected native lookup promises return synchronously and leave no unhandled rejection', async () => {
+  const {grantLookup,services} = await artifact(await emitModule(compiled));
+  const run = read => services.run(grantLookup('directory',['default'],read),flags,{alternate:false});
+  assert.deepEqual(run(async () => { throw new Error('native failure'); }), badResponse);
+  const crossRealm = runInNewContext('Promise.reject(new Error("cross-realm failure"))');
+  Object.defineProperty(crossRealm,'tag',{value:'missing'});
+  Object.defineProperty(crossRealm,'then',{get() { assert.fail('Promise .then accessor called'); }});
+  assert.deepEqual(run(() => crossRealm), badResponse);
+  let thenReads = 0;
+  const thenable = {get then() { thenReads++; return () => {}; }};
+  assert.deepEqual(run(() => thenable), badResponse);
+  assert.equal(thenReads, 0);
+  // Node's test runner fails if the process observes an unhandled rejection.
+  await new Promise(resolve => setImmediate(resolve));
 });
 
 test('lookup stages have checked signatures and a total continuation',() => {

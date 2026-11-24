@@ -7,15 +7,19 @@ import {pathToFileURL} from 'node:url';
 const out = resolve(process.argv[2] ?? 'build/inventory');
 mkdirSync(resolve(out,'..'),{recursive:true});
 mkdirSync(out);
-function run(args) {
+function run(args, status = 0) {
   const child = spawnSync(process.execPath,args,{encoding:'utf8'});
-  assert.equal(child.status,0,child.error?.message ?? child.stdout + child.stderr);
+  assert.equal(child.status,status,child.error?.message ?? child.stdout + child.stderr);
   return child.stdout;
 }
 const manifest = JSON.parse(run(['noitak.mjs','build','pilot/inventory/inventory.noi',join(out,'verified'),'--engine','auto','--json']));
 assert.deepEqual(manifest.artifactValidation.lookups,[{service:'replenish',authorizedCalls:4,deniedCalls:3}]);
 copyFileSync('pilot/inventory/service.mts',join(out,'service.mts'));
 run(['node_modules/typescript/bin/tsc','--strict','--module','nodenext',join(out,'service.mts')]);
+const asyncHandler = join(out,'async-handler.mts');
+copyFileSync('pilot/inventory/async-handler.mts',asyncHandler);
+const diagnostics = run(['node_modules/typescript/bin/tsc','--strict','--module','nodenext','--noEmit','--pretty','false',asyncHandler],2);
+assert.match(diagnostics, /async-handler\.mts\(3,\d+\): error TS2322:.*Promise<.*Enum_stock_reply/);
 const {purchasingDesk} = await import(pathToFileURL(join(out,'service.mjs')));
 const store = new Map();
 const desk = purchasingDesk(store,['pencil','paper']);

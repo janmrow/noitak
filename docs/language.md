@@ -212,10 +212,15 @@ keys. The service takes the token followed by the flags object and planner
 arguments. It checks the token identity and namespace, snapshots arguments
 and both stages’ required flags, runs the checked planner, and checks exact
 key membership before calling the handler once. The handler is synchronous
-and receives only the validated key. A thrown handler produces the
-`unavailable` reply. A response that fails the enum or payload checks produces
-`RESOURCE_RESPONSE` at the boundary. The service invokes the continuation on
-the snapshots and decoded reply and returns a fresh value.
+and receives only the validated key. The generated TypeScript factory requires
+a handler returning the declared reply enum for the resource. A thrown
+handler produces the `unavailable` reply. A response that fails the enum or
+payload checks produces `RESOURCE_RESPONSE` at the boundary. A returned
+native promise also produces `RESOURCE_RESPONSE` immediately. The Node
+artifact attaches a rejection handler to ordinary native promises so an
+accidentally returned rejected promise leaves no unhandled rejection. The
+service invokes the continuation on the snapshots and decoded reply and
+returns a fresh value.
 
 The token is local to its artifact instance. Ordinary Noitak values carry
 no capability identity. The host controls grant issuance, handler behavior,

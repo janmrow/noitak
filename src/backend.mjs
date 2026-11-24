@@ -42,15 +42,24 @@ function declarations({ functions, enums, records, types, lookups }) {
       ') => Result<' + ts(f.output) + '>;');
   }
   if (lookups?.length) {
+    const replyTypes = new Map();
+    const replyOf = s => ts(functions.find(f => f.name === s.resume).params.at(-1)[1]);
+    for (const s of lookups) {
+      if (!replyTypes.has(s.resource)) replyTypes.set(s.resource, new Set());
+      replyTypes.get(s.resource).add(replyOf(s));
+    }
     lines.push('};', 'declare const brand: unique symbol;',
-      'export interface LookupGrant<R extends string> { readonly [brand]: R }',
-      'export declare function grantLookup<R extends string>(resource: R, keys: readonly string[], read: (key: string) => unknown): LookupGrant<R>;',
+      'type LookupReplies = {',
+      ...[...replyTypes].map(([resource, replies]) => '  ' + JSON.stringify(resource) + ': ' + [...replies].join(' | ') + ';'),
+      '};',
+      'export interface LookupGrant<R extends string, Reply = R extends keyof LookupReplies ? LookupReplies[R] : unknown> { readonly [brand]: { resource: R; reply: Reply } }',
+      'export declare function grantLookup<R extends keyof LookupReplies, Reply extends LookupReplies[R]>(resource: R, keys: readonly string[], read: (key: string) => Reply): LookupGrant<R, Reply>;',
       "export type LookupResult<T> = Result<T> | {ok:false; code:'RESOURCE_RESPONSE'; phase:'boundary'};",
       'export declare const services: {');
     for (const s of lookups) {
       const planner = functions.find(f => f.name === s.planner), resume = functions.find(f => f.name === s.resume);
       const flags = s.reads.map(k => 'readonly ' + k + ': boolean').join('; ');
-      const params = ['grant: LookupGrant<' + JSON.stringify(s.resource) + '>', 'flags: { ' + flags + ' } & object',
+      const params = ['grant: LookupGrant<' + JSON.stringify(s.resource) + ', ' + replyOf(s) + '>', 'flags: { ' + flags + ' } & object',
         ...planner.params.map(([k,t]) => 'arg_' + k + ': ' + ts(t))];
       lines.push('  readonly ' + s.name + ': (' + params.join(', ') + ') => LookupResult<' + ts(resume.output) + '>;');
     }

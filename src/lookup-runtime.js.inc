@@ -1,5 +1,8 @@
+import { types as nodeTypes } from 'node:util';
+
 // A grant carries identity only. The handler and key set stay in this realm.
 const grants = new WeakMap();
+const promiseThen = Promise.prototype.then;
 export function grantLookup(resource, keys, read) {
   if (typeof resource !== 'string' || typeof read !== 'function' || !Array.isArray(keys))
     throw new TypeError('Expected a resource, bounded key list and read function');
@@ -29,6 +32,12 @@ function performLookup(spec, planner, resume, token, flags, args) {
       raw = read(key.value);
     } catch {
       raw = {tag:'unavailable'};
+    }
+    if (nodeTypes.isPromise(raw)) {
+      // A returned promise is a malformed synchronous reply. Observe rejection
+      // without reading its .then property or assimilating arbitrary thenables.
+      try { Reflect.apply(promiseThen, raw, [undefined, () => {}]); } catch {}
+      return error('RESOURCE_RESPONSE', 'boundary');
     }
     let reply;
     try {
