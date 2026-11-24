@@ -34,7 +34,7 @@ test('comparison reuses checked obligations and invalidates transitive implement
   assert.equal(failed.checks.at(-1).status,'violated');
 });
 
-test('external gate authorization binds the pair and authorizes exactly witnessed behavior', t => {
+test('external gate authorization binds the pair and discloses whole-function approval', t => {
   const dir = mkdtempSync(join(tmpdir(),'noitak-evolution-'));
   t.after(() => rmSync(dir,{recursive:true,force:true}));
   const base = join(dir,'old.noi'), next = join(dir,'new.noi'), out = join(dir,'bundle'), policy = join(dir,'policy.json');
@@ -56,8 +56,12 @@ test('external gate authorization binds the pair and authorizes exactly witnesse
   authorize(['project']);
   assert.equal(cli(['gate',base,next,out],1).decision,'blocked'); // sibling policy is never auto-loaded
   assert.equal(existsSync(out),false);
-  assert.equal(cli(gate,0).decision,'authorized-evolution');
+  const receipt = spawnSync(process.execPath,['noitak.mjs',...gate],{encoding:'utf8'});
+  assert.equal(receipt.status,0,receipt.error?.message ?? receipt.stderr + receipt.stdout);
+  assert.match(receipt.stdout,/covers all return-value differences on jointly admitted inputs in this exact revision for: project\./);
+  assert.match(receipt.stdout,/Each witness shows one differing input\. Other return differences may exist\./);
   const review = JSON.parse(readFileSync(join(out,'review.json')));
+  assert.equal(review.decision,'authorized-evolution');
   assert.equal(review.changes[0].status,'risky');
   assert.deepEqual(review.authorization.allowBehavior,['project']);
   writeFileSync(next,changed+'; edited');

@@ -8,8 +8,12 @@ const claims = {
 
 export function formatReview(report) {
   const lines = [report.passed ? 'ACCEPT under the Noitak change policy' : 'REVIEW REQUIRED'];
-  if (report.decision === 'authorized-evolution')
-    lines.push('Intentional behavior change authorized by policy SHA-256 ' + report.authorization.sha256);
+  if (report.decision === 'authorized-evolution') {
+    lines.push('Intentional behavior change authorized by policy SHA-256 ' + report.authorization.sha256,
+      'This approval covers all return-value differences on jointly admitted inputs in this exact revision for: ' +
+      report.authorization.allowBehavior.join(', ') + '.',
+      'Each witness shows one differing input. Other return differences may exist.');
+  }
   for (const [label, r] of [['Baseline', report.before], ['Candidate', report.after]])
     lines.push(`${label} ${r.module} ${r.version} · SHA-256 ${r.sourceSha256}`);
   lines.push('Verification: ' + report.configuration.method);

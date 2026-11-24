@@ -107,7 +107,7 @@ The default enumerable proof budget and explicit symbolic engine remain availabl
 
 Schema 7 separates static and runtime enforcement in `enforced`, required formal checks in `checks`, and unsupported claims in `outsideProof`. Vectors report tested cases through the test command. Every declared formal obligation is mandatory for build and gate, including induction and independence. Engine selection changes the evidence method. It cannot relax this acceptance policy.
 
-An intentional revision to a public promise requires an authority outside the candidate. Review the blocked finding and witness against the changed requirement, then promote an independently approved baseline through the project's trusted release process. A future authorization format could bind the old and new digests, named relation and approving identity while continuing to require proofs of both revisions and all other relations. The CLI currently implements no exception or self-approval field.
+An intentional revision to a public promise requires an authority outside the candidate. The gate supports external approval for witnessed return differences under the rules below. Changes outside those rules require an independently approved baseline through the project's trusted release process.
 
 ## Testing the emitted artifact
 
@@ -208,10 +208,20 @@ reviewed toolchain and policy store. A path supplied by candidate-controlled
 workflow code carries no independent authority. A changed snapshot or
 configuration requires fresh authorization.
 
-Authorization accepts exactly the named witnessed body differences. The
-report retains those witnesses and records the authorization digest and
-`authorized-evolution` decision. Contract weakening, lost independence,
-expanded authority and unresolved obligations remain blocking findings.
+Each named function needs a witnessed difference in actual returns.
+Authorization approves all return differences on jointly admitted inputs
+for those functions in the exact approved revision. A witness establishes
+that the function differs on one input. The report retains the witnesses and
+records the authorization digest and `authorized-evolution` decision. When
+the reviewer has a trusted implementation of the intended change, compare
+the candidate against that reference under the strict policy before issuing
+approval. The cold-chain benchmark uses a reference that preserves excursion
+selection and sets quarantine exactly when the excursion list is nonempty.
+The strict reference comparison catches a combined edit that also drops a
+rare reading. A separate benchmark experiment shows that whole-function
+approval and the ordinary acceptance vectors both accept that combined edit.
+Contract weakening, lost independence, expanded authority and unresolved
+obligations remain blocking findings.
 The gate refuses changes to an existing lookup descriptor or planner IR,
 including reachable planner code. This conservative policy covers observable
 requests and can block equivalent planner refactors. A handler replacement
