@@ -18,6 +18,7 @@ export function argument(type, value, readers) {
   if (type === 'bool') return typeof value === 'boolean' ? value : undefined;
   if (type === 'uuid') return typeof value === 'string' && value.length === 36 &&
     /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value) ? value : undefined;
+  if (type === 'i32') return Number.isInteger(value) && value >= -2147483648 && value <= 2147483647 ? value + 0 : undefined;
   if (type === 'u32') return Number.isInteger(value) && value >= 0 && value <= 0xffffffff ? value + 0 : undefined;
   if (type === 'byte') return Number.isInteger(value) && value >= 0 && value <= 255 ? value + 0 : undefined;
   if (value === null || typeof value !== 'object') return undefined;

@@ -1,0 +1,19 @@
+(module shipment 1.0.0
+  (import limits 6d91c8791089ad23c07b9ddc5e60b259ba0f6ce8028b9a9afbf8707512e4ce95)
+  (record sample (celsius i32) (calibrated bool))
+  (sequence samples sample 3)
+  (sequence temperatures i32 3)
+  (record assessment (excursions temperatures) (quarantine bool))
+  (helper select ((rows samples)) temperatures
+    (reads) (requires true)
+    (ensures (<= (length result) (length rows)))
+    (fold rows (items temperatures) (out row index)
+      (let t (get row celsius)
+        (if (and (get row calibrated) (call limits.excursion t))
+          (append out t) out))))
+  (fn assess ((rows samples) (private_note bool)) assessment
+    (reads) (independent private_note) (requires true)
+    (ensures (and (<= (length (get result excursions)) (length rows))
+      (or (not (get result quarantine)) (< 0 (length (get result excursions))))))
+    (let warnings (call select rows)
+      (make assessment (excursions warnings) (quarantine (<= 2 (length warnings)))))))

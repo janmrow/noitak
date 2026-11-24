@@ -25,6 +25,8 @@ npm run pilot:support -- build/support
 npm run pilot:batch -- build/batch
 npm run pilot:components -- build/components
 npm run pilot:collect -- build/collect
+npm run pilot:inventory -- build/inventory
+npm run bench:changes -- build/coldchain
 npm run release:check -- build/distribution
 ```
 

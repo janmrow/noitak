@@ -1,6 +1,7 @@
 import { cardinality, domainOf, productSize, sizeLabel, exceeds } from './domain.mjs';
 import { crosscheck } from './crosscheck.mjs';
 import { execute, invoke } from './runtime.mjs';
+import { hash } from './verify.mjs';
 import { refinement } from './refinement.mjs';
 import { solveRelation, usesSymbolic } from './symbolic.mjs';
 
@@ -21,7 +22,7 @@ function compareBodies(old, next) {
 }
 
 function compareField(old, next, field, context) {
-  const {configuration, proven, types, collector} = context;
+  const {configuration, proven, types, collector, positional} = context;
   const domain = productSize(domainOf(old).total, field === 'ensures' ? cardinality(old.output) : 1n);
   const symbolic = usesSymbolic(configuration, domain);
   const evidence = { method: symbolic ? 'symbolic' : 'enumerate', comparisonDomain: sizeLabel(domain),
@@ -31,7 +32,7 @@ function compareField(old, next, field, context) {
   if (!proven) return unresolved('missing-function-proof');
   if (Boolean(old.capacity) !== Boolean(next.capacity)) return unresolved('incompatible-entry-convention');
   const paramTypes = f => f.params.map(([,type]) => type);
-  if (!(collector ? equal(paramTypes(old), paramTypes(next)) : equal(old.params, next.params)) ||
+  if (!((collector || positional) ? equal(paramTypes(old), paramTypes(next)) : equal(old.params, next.params)) ||
       !['output', 'reads'].every(k => equal(old[k], next[k])))
     return unresolved('incompatible-interface');
   const limit = configuration.maxCasesPerFunction;
@@ -77,6 +78,23 @@ export function compare(oldUnit, newUnit, before, after) {
   const changes = [];
   const record = (subject, field, status, oldValue, newValue) =>
     changes.push({ subject, field, status, before: oldValue, after: newValue });
+  const priorServices = new Map(oldUnit.lookups?.map(s => [s.name, s]));
+  const nextServices = new Map(newUnit.lookups?.map(s => [s.name, s]));
+  for (const name of new Set([...priorServices.keys(), ...nextServices.keys()])) {
+    const old = priorServices.get(name), next = nextServices.get(name);
+    if (!equal(old, next)) {
+      record(name, 'lookup', 'policy-violation', old ?? null, next ?? null);
+    } else {
+      // A previously authorized return-value change must never authorize a new
+      // externally observable key or admit a new request to the resource.
+      const request = (unit, service) => {
+        const {params, requires, body, ensures, graph} = unit.functions.find(f => f.name === service.planner);
+        return {params, requires, body, ensures, graph};
+      };
+      const a = request(oldUnit, old), b = request(newUnit, next);
+      if (!equal(a,b)) record(name, 'lookup-key', 'policy-violation', a, b);
+    }
+  }
   if (oldUnit.name !== newUnit.name)
     record('module', 'identity', 'policy-violation', oldUnit.name, newUnit.name);
   for (const key of new Set([...Object.keys(before.dependencies), ...Object.keys(after.dependencies)])) {
@@ -98,14 +116,31 @@ export function compare(oldUnit, newUnit, before, after) {
   const typeConflict = [...oldTypes.values()].some(e => newTypes.has(e.name) && !equal(e, newTypes.get(e.name)));
   const types = typeConflict ? null : [...new Map([...oldTypes, ...newTypes]).values()];
   const oldHelpers = new Map(oldUnit.functions.filter(f => f.kind === 'helper').map(f => [f.name, f]));
+  const provenFunctions = report => new Set(report.checks
+    .filter(c => c.property === 'admissible-and-safe' && c.status === 'proven').map(c => c.function));
+  const provenOld = provenFunctions(before), provenNew = provenFunctions(after);
   for (const helper of newUnit.functions.filter(f => f.kind === 'helper')) {
     const prior = oldHelpers.get(helper.name);
+    oldHelpers.delete(helper.name);
     const reads = prior?.reads ?? [];
+    if (prior) for (const field of ['requires', 'ensures']) {
+      if (equal(prior[field], helper[field]) && equal(prior.params, helper.params)) continue;
+      if (prior[field] === true && helper[field] === true) continue;
+      const finding = compareField(prior, helper, field, {configuration: after.configuration,
+        proven: provenOld.has(helper.name) && provenNew.has(helper.name), types, positional:true});
+      changes.push({subject: helper.name, field, before:prior[field], after:helper[field], ...finding,
+        ...(finding.witness && {witnessKind:field === 'ensures' ? 'hypothetical-result' : 'lost-admission'})});
+    }
     if (!equal(reads, helper.reads))
       record(helper.name, 'helper-reads', helper.reads.some(k => !reads.includes(k)) ? 'policy-violation' : 'compatible', reads, helper.reads);
     if (prior && !equal(prior.independent, helper.independent))
       record(helper.name, 'independent', prior.independent.some(k => !helper.independent.includes(k)) ?
         'policy-violation' : 'compatible', prior.independent, helper.independent);
+  }
+  for (const helper of oldHelpers.values()) {
+    if (helper.independent.length || helper.ensures !== true || helper.requires !== true)
+      record(helper.name, 'helper-contract-removed', 'policy-violation',
+        {requires:helper.requires, ensures:helper.ensures, independent:helper.independent}, null);
   }
   const newer = new Map(newUnit.functions.filter(f => f.kind !== 'helper').map(f => [f.name, f]));
   const oldFunctions = new Map(oldUnit.functions.map(f => [f.name, f]));
@@ -168,7 +203,16 @@ export function compare(oldUnit, newUnit, before, after) {
       changes.push({ subject: c.function, field, status: 'policy-violation',
         property: c.property, reason: c.reason ?? c.status, proofDomain: c.domain, proofStatus: c.status, counterexample: c.counterexample });
   }
-  return { schema: 9, toolVersion: after.toolVersion, configuration: after.configuration,
+  const resourceChanges = [];
+  for (const [name, bound] of Object.entries(before.resourceEstimates ?? {})) {
+    const next = after.resourceEstimates?.[name];
+    if (next && !equal(next,bound)) resourceChanges.push({function:name, before:bound, after:next});
+  }
+  const identity = report => [report.module, report.sourceSha256, report.dependencies];
+  const authorizationScopeSha256 = hash(JSON.stringify(['witnessed-body-change-v1', after.toolVersion,
+    after.configuration, identity(before), identity(after)]));
+  const compatible = before.passed && after.passed && changes.every(c => c.status === 'compatible');
+  return { schema: 9, resourceChanges, authorizationScopeSha256, decision: compatible ? 'compatible' : 'blocked', toolVersion: after.toolVersion, configuration: after.configuration,
     before, after,
-    changes, passed: before.passed && after.passed && changes.every(c => c.status === 'compatible') };
+    changes, passed: compatible };
 }

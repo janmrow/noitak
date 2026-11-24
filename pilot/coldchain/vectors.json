@@ -1,0 +1,156 @@
+[
+  {
+    "fn": "assess",
+    "flags": {},
+    "args": [
+      [],
+      false
+    ],
+    "expected": {
+      "ok": true,
+      "value": {
+        "excursions": [],
+        "quarantine": false
+      }
+    }
+  },
+  {
+    "fn": "assess",
+    "flags": {},
+    "args": [
+      [
+        {
+          "celsius": 2,
+          "calibrated": true
+        },
+        {
+          "celsius": 8,
+          "calibrated": true
+        }
+      ],
+      false
+    ],
+    "expected": {
+      "ok": true,
+      "value": {
+        "excursions": [],
+        "quarantine": false
+      }
+    }
+  },
+  {
+    "fn": "assess",
+    "flags": {},
+    "args": [
+      [
+        {
+          "celsius": -5,
+          "calibrated": true
+        },
+        {
+          "celsius": 3,
+          "calibrated": true
+        },
+        {
+          "celsius": 9,
+          "calibrated": true
+        }
+      ],
+      false
+    ],
+    "expected": {
+      "ok": true,
+      "value": {
+        "excursions": [
+          -5,
+          9
+        ],
+        "quarantine": true
+      }
+    }
+  },
+  {
+    "fn": "assess",
+    "flags": {},
+    "args": [
+      [
+        {
+          "celsius": 1,
+          "calibrated": false
+        },
+        {
+          "celsius": 8,
+          "calibrated": true
+        },
+        {
+          "celsius": -1,
+          "calibrated": true
+        }
+      ],
+      false
+    ],
+    "expected": {
+      "ok": true,
+      "value": {
+        "excursions": [
+          -1
+        ],
+        "quarantine": false
+      }
+    }
+  },
+  {
+    "fn": "assess",
+    "flags": {},
+    "args": [
+      [
+        {
+          "celsius": 9,
+          "calibrated": true
+        },
+        {
+          "celsius": 9,
+          "calibrated": true
+        }
+      ],
+      false
+    ],
+    "expected": {
+      "ok": true,
+      "value": {
+        "excursions": [
+          9,
+          9
+        ],
+        "quarantine": true
+      }
+    }
+  },
+  {
+    "fn": "assess",
+    "flags": {},
+    "args": [
+      [
+        {
+          "celsius": -2147483648,
+          "calibrated": true
+        },
+        {
+          "celsius": 2147483647,
+          "calibrated": true
+        }
+      ],
+      false
+    ],
+    "expected": {
+      "ok": true,
+      "value": {
+        "excursions": [
+          -2147483648,
+          2147483647
+        ],
+        "quarantine": true
+      }
+    }
+  }
+]

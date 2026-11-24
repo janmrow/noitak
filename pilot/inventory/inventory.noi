@@ -1,0 +1,33 @@
+(module inventory 1.0.0
+  (record order_line (sku text) (units byte))
+  (record balance (on_hand byte) (reserved byte))
+  (enum stock_reply (found balance) (missing) (unavailable))
+  (enum advice (invalid_balance) (unknown_sku) (retry) (covered) (order byte))
+
+  (fn stock_key ((line order_line)) text (reads)
+    (requires (and (not (= (get line sku) "")) (< 0 (get line units))))
+    (ensures (= result (get line sku)))
+    (get line sku))
+
+  (helper allocate ((need byte) (stock balance)) advice (reads)
+    (requires true)
+    (ensures (match result (invalid_balance (< (get stock on_hand) (get stock reserved)))
+      (unknown_sku false) (retry false) (covered true)
+      (order units (and (< 0 units) (<= units need)))))
+    (if (< (get stock on_hand) (get stock reserved)) (tag advice invalid_balance)
+      (let available (- (get stock on_hand) (get stock reserved))
+        (if (<= need available) (tag advice covered)
+          (tag advice order (- need available))))))
+
+  (fn decide ((line order_line) (response stock_reply)) advice (reads)
+    (requires true)
+    (ensures (match response
+      (missing (= result (tag advice unknown_sku)))
+      (unavailable (= result (tag advice retry)))
+      (found stock (match result
+        (unknown_sku false) (retry false) (invalid_balance (< (get stock on_hand) (get stock reserved)))
+        (covered true) (order units (and (< 0 units) (<= units (get line units))))))))
+    (match response (missing (tag advice unknown_sku)) (unavailable (tag advice retry))
+      (found stock (call allocate (get line units) stock))))
+
+  (lookup replenish stockroom stock_key decide))

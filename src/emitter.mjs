@@ -25,17 +25,23 @@ function emitFrame(id, frame, targets) {
       case 'contains': return '(' + run(a) + ').includes(' + run(b) + ')';
       case 'strip-prefix': return 'stripPrefix(' + run(a) + ', ' + run(b) + ')';
       case 'text':
+      case 'i32':
       case 'u32':
       case 'uuid': return literal(a);
       case 'widen': return run(a);
+      case 'guard': return '(' + run(a) + ' ? ' + run(b) + ' : rejectNested())';
       case 'flag': return 'flags.get(' + literal(a) + ')';
       case 'if': return '(' + run(a) + ' ? ' + run(b) + ' : ' + run(c) + ')';
       case 'not': return '(!' + run(a) + ')';
       case 'and': return '(' + run(a) + ' && ' + run(b) + ')';
       case 'or': return '(' + run(a) + ' || ' + run(b) + ')';
+      case 'i32<':
+      case 'i32<=': return '(' + run(a) + ' ' + op.slice(3) + ' ' + run(b) + ')';
       case '<':
       case '<=': return '(' + run(a) + ' ' + op + ' ' + run(b) + ')';
       case '=': return 'equalValue(' + run(a) + ', ' + run(b) + ')';
+      case 'i32+':
+      case 'i32-': return 'inRange(' + run(a) + ' ' + op.at(-1) + ' ' + run(b) + ', 2147483647, -2147483648)';
       case '+':
       case '-':
       case 'u32+':
@@ -60,7 +66,9 @@ function emitFrame(id, frame, targets) {
         return '((' + subject + ') => { switch (' + subject + '.tag) { ' + arms.join(' ') +
           ' } throw new Error("Invalid checked tag"); })(' + run(a) + ')';
       }
+      case 'append': return 'appendItem(' + run(a) + ', ' + run(b) + ', ' + c + ')';
       case 'items': return '[' + b.map(run).join(', ') + ']';
+      case 'length32':
       case 'length': return '(' + run(a) + ').length';
       case 'member': return 'hasMember(' + run(a) + ', ' + run(b) + ')';
       case 'fold': {
@@ -152,6 +160,20 @@ export async function emitModule(unit) {
     }
     lines.push('const entry' + i + ' = Object.assign(' + literal(layout) + ', ' + targets.get(f.name) + ');',
       'api[' + literal(f.name) + '] = (flags, ...args) => atBoundary(entry' + i + ', flags, args, runCompiled, readers);');
+  }
+  if (unit.lookups?.length) {
+    lines.push(await readFile(new URL('lookup-runtime.js.inc',import.meta.url),'utf8'),
+      'export const services = Object.create(null);');
+    for (const [i, service] of unit.lookups.entries()) {
+      const planner = entries.find(f => f.name === service.planner);
+      const resume = entries.find(f => f.name === service.resume);
+      const spec = {resource:service.resource, params:planner.params, output:resume.output,
+        reads:service.reads, reply:resume.params.at(-1)[1]};
+      lines.push('const lookup' + i + ' = ' + literal(spec) + ';',
+        'services[' + literal(service.name) + '] = (grant, flags, ...args) => performLookup(lookup' +
+        i + ', ' + targets.get(planner.name) + ', ' + targets.get(resume.name) + ', grant, flags, args);');
+    }
+    lines.push('Object.freeze(services);');
   }
   return [...lines,'Object.freeze(api);',''].join('\n');
 }

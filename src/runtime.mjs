@@ -16,10 +16,14 @@ function evaluate(expr, env, flags, graph) {
     }
     case 'text':
     case 'uuid':
+    case 'i32':
     case 'u32': return a;
     case 'widen': return run(a);
     case 'let': return evaluate(c, new Map(env).set(a, run(b)), flags, graph);
     case 'if': return run(a) ? run(b) : run(c);
+    case 'guard':
+      if (!run(a)) throw new CallFault('CALL_PRECONDITION');
+      return run(b);
     case 'flag': return flags.get(a);
     case 'not': return !run(a);
     case 'and': return run(a) && run(b);
@@ -27,7 +31,13 @@ function evaluate(expr, env, flags, graph) {
     case '=': return equalValue(run(a), run(b));
     case 'make': return Object.fromEntries(b.map(([key, value]) => [key, run(value)]));
     case 'get': return run(a)[b];
+    case 'append': {
+      const values = run(a), item = run(b);
+      if (values.length >= c) throw new CallFault('CAPACITY');
+      return [...values, item];
+    }
     case 'items': return b.map(run);
+    case 'length32':
     case 'length': return run(a).length;
     case 'member': {
       const values = run(a), item = run(b);
@@ -72,14 +82,20 @@ function evaluate(expr, env, flags, graph) {
       const scope = binder ? new Map(env).set(binder, subject.value) : env;
       return evaluate(branch, scope, flags, graph);
     }
+    case 'i32<':
     case '<': return run(a) < run(b);
+    case 'i32<=':
     case '<=': return run(a) <= run(b);
     case '+':
     case '-':
     case 'u32+':
-    case 'u32-': {
+    case 'u32-':
+    case 'i32+':
+    case 'i32-': {
       const n = op.endsWith('+') ? run(a) + run(b) : run(a) - run(b);
-      if (n < 0 || n > (op.startsWith('u32') ? 0xffffffff : 255)) throw new RangeFault();
+      const signed = op.startsWith('i32');
+      if (signed ? n < -2147483648 || n > 2147483647 : n < 0 || n > (op.startsWith('u32') ? 0xffffffff : 255))
+        throw new RangeFault();
       return n;
     }
     default: throw new Error('Invalid instruction');
@@ -120,7 +136,7 @@ function runValidated(f, values, snapshot) {
     let state = values[0];
     const items = values[1];
     const admitted = predicate(f, 'requires', [state], snapshot);
-    if (admitted !== true) return error(admitted === false ? 'PRECONDITION' : 'ARITHMETIC', 'requires');
+    if (admitted !== true) return error(admitted === false ? 'PRECONDITION' : admitted === 'capacity-fault' ? 'CAPACITY' : 'ARITHMETIC', 'requires');
     for (const item of items) {
       const step = execute(f, [state, item], snapshot);
       if (!step.ok) return step;
@@ -140,6 +156,7 @@ function predicate(f, field, args, flags, result) {
   if (field === 'ensures') env.set('result', result);
   try { return evaluate(f[field], env, flags, f.graph); }
   catch (e) {
+    if (e instanceof CallFault && e.code === 'CAPACITY') return 'capacity-fault';
     if (e instanceof RangeFault) return 'arithmetic-fault';
     throw e;
   }

@@ -45,15 +45,19 @@ function query(request, spawn) {
   return answer;
 }
 
-export function solve(f, types, spawn = spawnSync) {
-  const answer = query({ function: f, types }, spawn);
+export function solve(f, types, spawn = spawnSync, contracts) {
+  const answer = query({ function: f, types, contracts }, spawn);
+  if (contracts && answer.status === 'needs-implementation' && hasFields(answer, 'status', 'solverVersion')) {
+    const exact = solve(f, types, spawn);
+    return {...exact, abstraction: 'insufficient-callee-contracts'};
+  }
   if (answer.status === 'unverified') return answer;
   const { solverVersion } = answer;
   if (answer.status === 'proven' && hasFields(answer, 'status', 'solverVersion', 'safety', 'admission', 'witness') && validModel(answer.witness) &&
       answer.safety === 'unsat' && answer.admission === 'sat') {
     const model = typedInput(f, answer.witness);
     if (!model || !invokeTransition(f, model.flags, model.args).ok) return unknown('admission-replay-disagreement');
-    return { status: 'proven', solverVersion, safety: 'unsat', admission: 'sat',
+    return { status: 'proven', ...(contracts && {method: 'callee-contracts', premises: Object.keys(contracts)}), solverVersion, safety: 'unsat', admission: 'sat',
       admissionWitness: {args:model.args, flags:model.flags} };
   }
   if (answer.status === 'violated') {
@@ -65,7 +69,7 @@ export function solve(f, types, spawn = spawnSync) {
       if (!model) return unknown('model-replay-disagreement');
       const {args, flags} = model;
       const outcome = invokeTransition(f, flags, args);
-      if (['POSTCONDITION','ARITHMETIC','CALL_PRECONDITION','CALL_POSTCONDITION'].includes(outcome.code))
+      if (['POSTCONDITION','CAPACITY','ARITHMETIC','CALL_PRECONDITION','CALL_POSTCONDITION'].includes(outcome.code))
         return { status: 'violated', solverVersion, counterexample: {args, flags, outcome} };
       return unknown('model-replay-disagreement');
     }

@@ -19,7 +19,7 @@ function name(node) {
   return node.atom;
 }
 
-const scalars = ['byte', 'bool', 'u32', 'uuid', 'text'];
+const scalars = ['byte', 'bool', 'u32', 'i32', 'uuid', 'text'];
 
 function type(node, types) {
   if (scalars.includes(node.atom)) return node.atom;
@@ -117,6 +117,11 @@ function expression(node, env, context, depth = 1) {
       if (value > 0xffffffff) fail(node, 'E_RANGE', 'u32 literal exceeds 4294967295');
       return ['u32', ['u32', value]];
     }
+    if (/^(0|-?[1-9][0-9]*)i32$/.test(s)) {
+      const value = Number(s.slice(0, -3));
+      if (value < -2147483648 || value > 2147483647) fail(node, 'E_RANGE', 'i32 literal outside signed 32-bit range');
+      return ['i32', ['i32', value]];
+    }
     if (!env.has(s)) fail(node, 'E_NAME', 'Unknown value: ' + s);
     context.references.add(s);
     return [env.get(s), s];
@@ -158,27 +163,29 @@ function expression(node, env, context, depth = 1) {
     });
     return [sequence, ['items', sequence.name, values]];
   }
-  if (op === 'length' || op === 'member' || op === 'fold') {
-    if (args.length !== {length:1, member:2, fold:4}[op]) fail(node, 'E_FORM', 'Incorrect sequence operation arity');
+  if (['length', 'member', 'append', 'fold'].includes(op)) {
+    if (args.length !== {length:1, member:2, append:2, fold:4}[op]) fail(node, 'E_FORM', 'Incorrect sequence operation arity');
     const [sequence, value] = check(args[0]);
     if (!sequence.element) fail(args[0], 'E_TYPE', 'Expected a sequence');
-    if (op === 'length') return ['byte', ['length', value]];
-    if (op === 'member') {
+    const indexType = sequence.indexType ?? 'byte';
+    if (op === 'length') return [indexType, [indexType === 'u32' ? 'length32' : 'length', value]];
+    if (op === 'member' || op === 'append') {
       const [actual, item] = check(args[1]);
       expect(args[1], actual, sequence.element);
       budget.work += sequence.capacity;
+      if (op === 'append') return [sequence, ['append', value, item, sequence.capacity]];
       return ['bool', ['member', value, item]];
     }
     const [acc, initial] = check(args[1]);
     const scope = new Map(env);
     const binders = list(args[2]);
     if (binders.length !== 3) fail(args[2], 'E_FORM', 'Expected (accumulator element index)');
-    const names = binders.map((b, i) => bind(scope, b, [acc, sequence.element, 'byte'][i]));
+    const names = binders.map((b, i) => bind(scope, b, [acc, sequence.element, indexType][i]));
     const start = budget.work;
     const [out, body] = check(args[3], scope);
     expect(args[3], out, acc);
     budget.work += (sequence.capacity - 1) * (budget.work - start);
-    return [acc, ['fold', value, initial, names, body, sequence.capacity]];
+    return [acc, ['fold', value, initial, names, body, sequence.capacity, ...(sequence.indexType ? [32] : [])]];
   }
   if (op === 'make') {
     if (!args.length) fail(node, 'E_FORM', 'Expected record type');
@@ -203,6 +210,28 @@ function expression(node, env, context, depth = 1) {
     if (!field) fail(args[1], 'E_FIELD', 'Unknown record field');
     return [field[1], ['get', value, field[0]]];
   }
+  if (op === 'reduce') {
+    if (args.length !== 3) fail(node, 'E_FORM', 'Expected (reduce reducer initial sequence)');
+    const target = helpers?.get(args[0].atom);
+    if (!target?.capacity) fail(args[0], 'E_CALL', 'Expected an earlier local or directly imported reducer in a body');
+    const [state, initial] = check(args[1]);
+    const [sequence, values] = check(args[2]);
+    expect(args[1], state, target.output);
+    if (!sequence.element) fail(args[2], 'E_TYPE', 'Expected a sequence');
+    expect(args[2], sequence.element, target.params[1][1]);
+    if (sequence.capacity > target.capacity) fail(args[2], 'E_LIMIT', 'Sequence exceeds reducer capacity');
+    for (const grant of target.reads)
+      if (!reads.includes(grant)) fail(node, 'E_EFFECT', 'Reducer requires undeclared flag: ' + grant);
+    context.calls.add(target.name);
+    // Lower to ordinary lexical bindings, a checked admission, and the same
+    // fold used for anonymous transitions. Internal names cannot occur in source.
+    const invariant = ['let', target.params[0][0], '$initial', target.requires];
+    const step = ['apply', target.name, ['$state', '$row']];
+    const loop = ['fold', '$rows', '$initial', ['$state', '$row', '$idx'], step, sequence.capacity, ...(sequence.indexType ? [32] : [])];
+    budget.work += 10 + target.budget.work + sequence.capacity * (target.budget.work + 3);
+    budget.depth = Math.max(budget.depth, depth + target.budget.depth + 6);
+    return [state, ['let', '$initial', initial, ['let', '$rows', values, ['guard', invariant, loop]]]];
+  }
   if (op === 'call' || op === 'attempt') {
     let outcome, index;
     if (op === 'attempt') {
@@ -215,7 +244,7 @@ function expression(node, env, context, depth = 1) {
       index = ir;
     }
     const target = helpers?.get(args[0]?.atom);
-    if (!target) fail(node, 'E_CALL', 'Calls in bodies require an earlier local helper or a directly imported public function');
+    if (!target || target.capacity) fail(node, 'E_CALL', 'Calls in bodies require an earlier local helper or a directly imported public function');
     if (args.length !== target.params.length + 1) fail(node, 'E_FORM', 'Incorrect call arity');
     for (const grant of target.reads)
       if (!reads.includes(grant)) fail(node, 'E_EFFECT', 'Call requires undeclared flag: ' + grant);
@@ -292,12 +321,14 @@ function expression(node, env, context, depth = 1) {
   } else {
     let input = operandTypes[0];
     if (['not', 'or', 'and'].includes(op)) input = 'bool';
-    else if (op !== '=' && !['u32', 'byte'].includes(input))
-      fail(args[0], 'E_TYPE', 'Expected byte or u32 operands');
+    else if (op !== '=' && !['u32', 'i32', 'byte'].includes(input))
+      fail(args[0], 'E_TYPE', 'Expected integer operands');
     args.forEach((arg, i) => expect(arg, operandTypes[i], input));
     out = ['+', '-'].includes(op) ? input : 'bool';
   }
-  const instruction = out === 'u32' && ['+', '-'].includes(op) ? 'u32' + op : op;
+  let instruction = op;
+  if (operandTypes[0] === 'i32' && ['+', '-', '<', '<='].includes(op)) instruction = 'i32' + op;
+  if (out === 'u32' && ['+', '-'].includes(op)) instruction = 'u32' + op;
   return [out, [instruction, ...operands.map(([, e]) => e)]];
 }
 
@@ -369,7 +400,7 @@ function collector(node, types, helpers, prefix) {
     fail(outputNode, 'E_LIMIT', 'Collector output capacity must cover its input capacity');
   const [target] = form(using, 'using', 2);
   const selector = helpers.get(target.atom);
-  if (!selector) fail(target, 'E_NAME', 'Unknown collector selector: ' + target.atom);
+  if (!selector || selector.capacity) fail(target, 'E_NAME', 'Unknown collector selector: ' + target.atom);
   if (selector.params.length !== 1 || selector.params[0][1] !== input.element)
     fail(target, 'E_TYPE', 'Collector selector must take one input element');
   const variants = selector.output.variants;
@@ -416,7 +447,7 @@ export function compileModule(root, dependencies, prefix = '') {
     for (const f of dep.unit.functions) allFunctions.set(f.name, f);
     for (const t of dep.unit.localTypes) types.set(t.name, t);
     for (const f of dep.unit.localFunctions)
-      if (f.kind === 'imported' && !f.capacity && !f.collector) helpers.set(f.name, f);
+      if (f.kind === 'imported' && !f.collector) helpers.set(f.name, f);
   }
   const localTypes = [], localFunctions = [];
   const tag = node => node.items?.[0]?.atom;
@@ -443,12 +474,13 @@ export function compileModule(root, dependencies, prefix = '') {
     if (kind === 'enum') t = enumeration(node, lookup);
     else if (kind === 'record') t = recordType(node, lookup);
     else {
-      const [, item, size] = form(node, kind, kind === 'sequence' ? 4 : 3);
+      const wide = kind === 'sequence' && node.items[4]?.atom === 'u32';
+      const [, item, size] = form(node, kind, kind === 'sequence' ? (wide ? 5 : 4) : 3);
       const element = type(item, lookup);
       if (kind === 'sequence') {
-        if (!/^[1-9][0-9]*$/.test(size.atom ?? '') || Number(size.atom) > 255)
-          fail(size, 'E_LIMIT', 'Sequence capacity must be 1 through 255');
-        t = {element, capacity:Number(size.atom)};
+        if (!/^[1-9][0-9]*$/.test(size.atom ?? '') || Number(size.atom) > (wide ? 65535 : 255))
+          fail(size, 'E_LIMIT', wide ? 'Wide sequence capacity must be 1 through 65535' : 'Byte-indexed sequence capacity must be 1 through 255');
+        t = {element, capacity:Number(size.atom), ...(wide ? {indexType:'u32'} : {})};
       } else t = {success:element, variants:[{tag:'committed',payload:element}, {tag:'rejected',payload:'byte'}]};
     }
     t.name = prefix + key;
@@ -460,7 +492,7 @@ export function compileModule(root, dependencies, prefix = '') {
     return t;
   }
   for (const key of definitions.keys()) resolveType(key);
-  for (const node of defs.filter(n => tag(n) !== 'import' && !kinds.has(tag(n)))) {
+  for (const node of defs.filter(n => !['import', 'lookup'].includes(tag(n)) && !kinds.has(tag(n)))) {
     const f = tag(node) === 'collect' ? collector(node, types, helpers, prefix) : fn(node, types, helpers, prefix);
     const local = bind(seen, node.items[1], f);
     if (f.budget.work > 16384 || f.budget.depth > 192) fail(node, 'E_LIMIT', 'Expression work or depth exceeds limit');
@@ -473,14 +505,37 @@ export function compileModule(root, dependencies, prefix = '') {
       frames.set(key, [target.params.map(([k]) => k), target.requires, target.body, target.ensures]);
     }
     f.graph = Object.fromEntries([...frames].sort(([a],[b]) => a < b ? -1 : 1));
-    if (f.kind === 'helper') helpers.set(local, f);
-    else if (prefix) f.kind = 'imported';
+    if (f.kind === 'helper' || f.capacity) helpers.set(local, f);
+    if (f.kind !== 'helper' && prefix) f.kind = 'imported';
     allFunctions.set(f.name,f);
     localFunctions.push(f);
   }
   if (!localFunctions.some(f => f.kind !== 'helper')) fail(root, 'E_FORM', 'Expected at least one public function');
+  const lookups = [];
+  for (const node of defs.filter(n => tag(n) === 'lookup')) {
+    const [id, resource, plannerId, resumeId] = form(node, 'lookup', 5);
+    const service = bind(seen, id, true);
+    const target = id => {
+      const f = allFunctions.get(prefix + name(id));
+      if (!localFunctions.includes(f) || f.kind === 'helper' || f.capacity || f.collector)
+        fail(id, 'E_EFFECT', 'Lookup stages must be local ordinary public functions');
+      return f;
+    };
+    const planner = target(plannerId), resume = target(resumeId);
+    expect(plannerId, planner.output, 'text');
+    if (resume.requires !== true || resume.params.length !== planner.params.length + 1 ||
+        planner.params.some(([, t], i) => t !== resume.params[i][1]))
+      fail(resumeId, 'E_EFFECT', 'Continuation must accept every original argument and a reply under requires true');
+    const reply = resume.params.at(-1)[1];
+    const variants = reply.variants;
+    if (variants?.length !== 3 || variants[0].tag !== 'found' || !variants[0].payload ||
+        variants[1].tag !== 'missing' || variants[1].payload || variants[2].tag !== 'unavailable' || variants[2].payload)
+      fail(resumeId, 'E_EFFECT', 'Lookup reply must be an enum with found payload, missing and unavailable');
+    lookups.push({name:service, resource:name(resource), planner:planner.name, resume:resume.name,
+      reads:[...new Set([...planner.reads, ...resume.reads])].sort()});
+  }
   const declarations = [...allTypes.values()];
-  return { types: declarations, localTypes, localFunctions,
+  return { types: declarations, localTypes, localFunctions, lookups,
     enums: declarations.filter(t => t.variants), records: declarations.filter(t => t.fields),
     name: moduleName, version: version.atom, functions: [...allFunctions.values()] };
 }

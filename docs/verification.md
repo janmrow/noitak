@@ -77,7 +77,7 @@ For symbolic comparison both programs share the same input symbols, flags and co
 Coverage compares obligation, status and domain descriptor. Interface and layout changes also produce their own findings. Each finding stands independently. A new export with a grant therefore produces both an export finding and a policy violation. Only compatible findings pass the gate.
 
 
-Gate publishes only if both revisions pass their own proofs and all findings are compatible. The candidate IR and source digest flow from the comparison to the build in the same process. The artifact manifest additionally identifies the exact review.json bytes. For a real change decision the caller selects a trusted baseline, toolchain and policy. CI exercises the delivery and support pilots and the installed TypeScript metering consumer. A passing experiment job means even the expected refusals were reproduced.
+The strict gate publishes only if both revisions pass their own proofs and all findings are compatible. A separately supplied authorization can approve a bounded class of witnessed changes under the conditions below. The candidate IR and source digest flow from the comparison to the build in the same process. The artifact manifest additionally identifies the exact review.json bytes. For a real change decision the caller selects a trusted baseline, toolchain and policy. CI exercises the delivery and support pilots and the installed TypeScript metering consumer. A passing experiment job means even the expected refusals were reproduced.
 
 The body comparison applies to root and imported public functions, with private implementations taken from the reachable call graph. A private-only refactor may change the source digest without changing a public outcome. Adding a grant to a private helper is a policy violation, even when the caller already has it. Removing an independence guarantee from a retained helper or public entry requires review. Removed exports and changes to exposed record definitions remain risky. A fresh proof of every required check on both revisions is mandatory for publication.
 
@@ -166,3 +166,74 @@ the count against the visited rows on compared calls. Empty batches provide
 admission evidence. A collector that always skips can have nonzero dispatch
 coverage with zero emissions. Whole-array vectors can detect a change in
 order that a one-row comparison cannot exercise.
+
+## Proof assumptions and reuse in 0.10
+
+Each verified function group reports stable obligation IDs, a checked
+definition digest, and direct dependency digests. The report includes the
+configuration and the proof session assumption digest. A diff or gate
+operation can reuse successful results from its own baseline verification.
+It invalidates reuse after changes to the checked definition or reachable
+callee definitions, and conservatively after any linked type layout,
+dependency pin or proof configuration change. Cache entries never cross a
+CLI invocation. Candidate files and JSON evidence cannot feed the cache.
+
+For symbolic safety on large finite domains in auto mode, a caller can use an already proved callee’s
+contract as a premise. The callee postcondition is assumed only for typed
+admitted arguments and all allowed outputs are considered. A potential
+failure under that approximation triggers exact verification. Admission is
+established separately and replayed through concrete execution. Failures in
+verification or replay leave the obligation open. Source typing, runtime
+enforcement, source proofs and tests of generated code remain distinct
+evidence. For a direct reducer entry, termination follows the input bound
+and finite acyclic step structure. Its inductive preservation proof is a
+separate obligation. Composed reductions currently expand at their checked
+sequence capacity, and proof cost may grow even when execution is bounded.
+
+## Authorizing an intentional change
+
+Run `noitak diff OLD NEW --engine auto --json` using the trusted baseline and
+toolchain. A reviewer can supply a separate JSON file of the form
+
+```json
+{"schema":1,"scopeSha256":"DIGEST_FROM_AUTHORIZATION_SCOPE","allowBehavior":["assess"]}
+```
+
+Use the report’s `authorizationScopeSha256`. It covers both source
+snapshots and their pins, the compiler version and the proof configuration.
+Run `noitak gate OLD NEW NEW_DIR --engine auto --authorization POLICY`.
+The protected caller chooses both the baseline and the authorization bytes.
+In CI, use a protected workflow or equivalent job with an independently
+reviewed toolchain and policy store. A path supplied by candidate-controlled
+workflow code carries no independent authority. A changed snapshot or
+configuration requires fresh authorization.
+
+Authorization accepts exactly the named witnessed body differences. The
+report retains those witnesses and records the authorization digest and
+`authorized-evolution` decision. Contract weakening, lost independence,
+expanded authority and unresolved obligations remain blocking findings.
+The gate refuses changes to an existing lookup descriptor or planner IR,
+including reachable planner code. This conservative policy covers observable
+requests and can block equivalent planner refactors. A handler replacement
+inside the host remains outside source review. Static work and depth changes
+are reported. The existing hard work and capacity policies apply.
+
+## Artifact execution and effect assurance
+
+Artifact checking executes emitted ESM in a short-lived Node worker with an
+empty environment, V8 heap and stack limits, and a wall-clock timeout. It
+requires admitted executions and verifies a simulated host handler’s effects
+for each lookup service, including resource mismatch, wrong key, forged
+token and malformed reply. The worker shares process credentials and Node
+APIs. It loads only compiler-emitted bytes in the normal build. The worker
+offers isolation of JS state and limited resources, with filesystem and OS
+isolation delegated to the execution environment. Solver subprocesses use
+isolated Python mode and query and hard execution deadlines.
+
+Capability token identity, exact namespace and key checks enforce the
+authorization before the handler dispatch. The static proof reasons about
+the pure continuation over all typed replies. It leaves host honesty,
+availability, response truth and service trace independence unestablished.
+The chosen scope and workload limits address controls described in
+[MITRE CWE-862](https://cwe.mitre.org/data/definitions/862.html) and
+[OWASP API4](https://owasp.org/API-Security/editions/2023/en/0xa4-unrestricted-resource-consumption/).

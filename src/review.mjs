@@ -8,6 +8,8 @@ const claims = {
 
 export function formatReview(report) {
   const lines = [report.passed ? 'ACCEPT under the Noitak change policy' : 'REVIEW REQUIRED'];
+  if (report.decision === 'authorized-evolution')
+    lines.push('Intentional behavior change authorized by policy SHA-256 ' + report.authorization.sha256);
   for (const [label, r] of [['Baseline', report.before], ['Candidate', report.after]])
     lines.push(`${label} ${r.module} ${r.version} · SHA-256 ${r.sourceSha256}`);
   lines.push('Verification: ' + report.configuration.method);
@@ -47,6 +49,9 @@ export function formatReview(report) {
       (c.crosscheck.reason ? ' (' + c.crosscheck.reason + ')' : ''));
     if (c.reason) lines.push('Reason: ' + c.reason);
   }
+  for (const c of report.resourceChanges ?? [])
+    lines.push(c.function + ' static work estimate ' + c.before.work + ' → ' + c.after.work +
+      ', expression depth ' + c.before.depth + ' → ' + c.after.depth);
   if (!report.changes.length) lines.push('No findings under the change policy.');
   if (report.artifactValidation) {
     const calls = report.artifactValidation.checks.reduce((sum,c)=>sum+c.cases,0);

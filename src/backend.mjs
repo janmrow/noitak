@@ -4,7 +4,7 @@ import { checkArtifact } from './artifact-check.mjs';
 import { emitModule } from './emitter.mjs';
 import { hash } from './verify.mjs';
 
-const scalarTypes = {byte: 'number', u32: 'number', bool: 'boolean', uuid: 'string', text: 'string'};
+const scalarTypes = {byte: 'number', i32: 'number', u32: 'number', bool: 'boolean', uuid: 'string', text: 'string'};
 
 function ts(t) {
   if (typeof t === 'string') return scalarTypes[t];
@@ -12,9 +12,9 @@ function ts(t) {
   return prefix + t.name.replaceAll('.', '$');
 }
 
-function declarations({ functions, enums, records, types }) {
+function declarations({ functions, enums, records, types, lookups }) {
   const lines = [
-    "export type Result<T> = { ok: true; value: T } | { ok: false; code: 'ARGUMENT' | 'CAPABILITY' | 'ARITHMETIC' | 'PRECONDITION' | 'POSTCONDITION' | 'CALL_PRECONDITION' | 'CALL_POSTCONDITION'; phase: 'boundary' | 'requires' | 'body' | 'ensures' };",
+    "export type Result<T> = { ok: true; value: T } | { ok: false; code: 'ARGUMENT' | 'CAPABILITY' | 'ARITHMETIC' | 'CAPACITY' | 'PRECONDITION' | 'POSTCONDITION' | 'CALL_PRECONDITION' | 'CALL_POSTCONDITION'; phase: 'boundary' | 'requires' | 'body' | 'ensures' };",
   ];
   for (const e of enums) {
     const members = e.variants.map(({tag, payload}) =>
@@ -40,6 +40,20 @@ function declarations({ functions, enums, records, types }) {
       (f.capacity && i === 1 ? 'ReadonlyArray<' + ts(t) + '>' : ts(t)));
     lines.push('  readonly ' + f.name + ': (' + ['flags: { ' + flags + ' } & object', ...params].join(', ') +
       ') => Result<' + ts(f.output) + '>;');
+  }
+  if (lookups?.length) {
+    lines.push('};', 'declare const brand: unique symbol;',
+      'export interface LookupGrant<R extends string> { readonly [brand]: R }',
+      'export declare function grantLookup<R extends string>(resource: R, keys: readonly string[], read: (key: string) => unknown): LookupGrant<R>;',
+      "export type LookupResult<T> = Result<T> | {ok:false; code:'RESOURCE_RESPONSE'; phase:'boundary'};",
+      'export declare const services: {');
+    for (const s of lookups) {
+      const planner = functions.find(f => f.name === s.planner), resume = functions.find(f => f.name === s.resume);
+      const flags = s.reads.map(k => 'readonly ' + k + ': boolean').join('; ');
+      const params = ['grant: LookupGrant<' + JSON.stringify(s.resource) + '>', 'flags: { ' + flags + ' } & object',
+        ...planner.params.map(([k,t]) => 'arg_' + k + ': ' + ts(t))];
+      lines.push('  readonly ' + s.name + ': (' + params.join(', ') + ') => LookupResult<' + ts(resume.output) + '>;');
+    }
   }
   return [...lines, '};', ''].join('\n');
 }

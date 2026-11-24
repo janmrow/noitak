@@ -98,6 +98,26 @@ try {
   const {collect} = await import(pathToFileURL(join(host,'collect/service.mjs')));
   for (const v of JSON.parse(vectorBytes)) assert.deepEqual(collect(...v.args),v.expected);
   console.log('Installed webhook collector returned the ordered jobs through its strict TypeScript caller.');
+  const inventory = join(host, 'node_modules/noitak/pilot/inventory');
+  run(cli, ['build', join(inventory,'inventory.noi'), 'inventory/verified', '--engine','auto'], host);
+  copyFileSync(join(inventory,'service.mts'),join(host,'inventory/service.mts'));
+  run(process.execPath,[join(root,'node_modules/typescript/bin/tsc'),'--strict','--module','nodenext','inventory/service.mts'],host);
+  const {purchasingDesk} = await import(pathToFileURL(join(host,'inventory/service.mjs')));
+  const replenish = purchasingDesk(new Map([['paper',{on_hand:4,reserved:2}]]),['paper']);
+  assert.deepEqual(replenish({sku:'paper', units:5}),{ok:true,value:{tag:'order',value:3}});
+  console.log('Installed lookup service with an inventory-scoped grant passed.');
+  const coldchain = join(host, 'node_modules/noitak/pilot/coldchain');
+  const shipment = join(coldchain,'shipment.noi');
+  const shipmentReport = JSON.parse(run(cli,['build',shipment,'shipment/verified',
+    '--engine','auto','--vectors',join(coldchain,'vectors.json'),'--json'],host));
+  assert.ok(shipmentReport.passed && shipmentReport.dependencies.limits &&
+    shipmentReport.checks.some(c=>c.method==='callee-contracts' && c.status==='proven'));
+  copyFileSync(join(coldchain,'service.mts'),join(host,'shipment/service.mts'));
+  run(process.execPath,[join(root,'node_modules/typescript/bin/tsc'),'--strict','--module','nodenext','shipment/service.mts'],host);
+  const {receiveShipment} = await import(pathToFileURL(join(host,'shipment/service.mjs')));
+  assert.deepEqual(receiveShipment([{celsius:-5,calibrated:true},{celsius:9,calibrated:true}],false),
+    {ok:true,value:{excursions:[-5,9],quarantine:true}});
+  console.log('Installed signed collection pipeline and pinned callee contracts passed.');
   writeFileSync(join(staged,'SHA256SUMS'),digest+'  '+basename(archive)+'\n');
   await publishDirectory(staged,output);
   console.log('Installed CLI, packaged solver, gated bundle and host call passed.');

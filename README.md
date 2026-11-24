@@ -1,10 +1,17 @@
-# Noitak 0.8
+# Noitak 0.10
 
-Noitak aims to become a practical programming language for software built primarily by AI agents, where safety, verifiable guarantees, and change control are first-class parts of programming. Today it compiles pure, contracted components into standalone JavaScript with TypeScript declarations. [Project philosophy](docs/philosophy.md)
+Noitak aims to become a practical programming language for software built primarily by AI agents, where safety, verifiable guarantees, and change control are first-class parts of programming. It compiles contracted computations and capability-scoped lookup services to standalone JavaScript with TypeScript declarations. [Project philosophy](docs/philosophy.md)
 
-Version 0.8 handles nested request envelopes, optional structured payloads, text and collections of up to 255 elements. The webhook component turns branch pushes into typed CI jobs. The topic policy enforces tenant, grant and protected-prefix checks in an ordinary TypeScript service. Build and gate execute a concrete admitted input for every export and can require application-owned expected outcomes. [Release evidence and trade-offs](docs/release-0.8.md)
+Ordinary functions can build typed intermediate sequences, fold them into records, and call verified reducer steps through a bounded reduction. A shipment assessment filters calibrated signed readings, retains ordered excursions, and makes a quarantine decision. An inventory service plans an authorized stock lookup and handles its typed reply. The change gate can use a reviewer-supplied authorization for a specific behavioral change. [Engineering assessment](docs/release-0.10.md)
 
-## Run the 0.8 workloads
+With Node 22, TypeScript and the pinned Python environment installed, run the two evaluations from the checkout. Each command creates a fresh output directory.
+
+```sh
+npm run bench:changes -- build/coldchain
+npm run pilot:inventory -- build/inventory
+```
+
+## Earlier workloads
 
 With Node 22, npm dependencies and the pinned Python environment installed as below, run the comparison from the checkout. Each destination must be fresh.
 
@@ -39,7 +46,7 @@ In a TypeScript application, install the checked tarball as a dev dependency. Pl
 
 ```sh
 sha256sum --check SHA256SUMS
-npm install --save-dev ./noitak-0.9.0.tgz
+npm install --save-dev ./noitak-0.10.0.tgz
 python -m pip install -r node_modules/noitak/requirements-symbolic.txt
 npx --no-install noitak verify node_modules/noitak/pilot/metering/metering.noi --engine auto
 npx --no-install noitak build node_modules/noitak/pilot/metering/metering.noi meter/verified --engine auto
@@ -182,7 +189,7 @@ python3 -m venv .venv
 python -m pip install -r requirements-symbolic.txt
 npm run test:symbolic
 node noitak.mjs verify examples/reserve.noi --engine symbolic --json
-node noitak.mjs build examples/reserve.noi build/inventory --engine symbolic
+node noitak.mjs build examples/reserve.noi build/reserve --engine symbolic
 ```
 
 The inventory module has 16,777,216 possible inputs. Z3 checks whether any input could fault or violate the contract, then checks that at least one input is admitted. The proof report records both solver answers. Z3 runs during symbolic verification. The generated JS module runs in the host with no Python or Z3 installation.
@@ -196,9 +203,13 @@ The inventory module has 16,777,216 possible inputs. Z3 checks whether any input
 | build FILE NEW_DIR | Verification passes and all artifacts are written |
 | test FILE VECTORS | All JSON vectors match the observed tagged outcomes |
 | diff OLD NEW | Both revisions pass verification and all findings are compatible |
-| gate OLD NEW NEW_DIR | The comparison passes and the candidate bundle is written |
+| gate OLD NEW NEW_DIR | Strict compatibility or a scoped authorization passes, and the validated candidate bundle is written |
 
 The original `node noi.mjs` entry point remains available for existing scripts. Append `--json` for a single machine-readable JSON object on stdout. Build and gate additionally accept `--vectors FILE` to require application cases against the artifact. Verification and comparison accept `--limit N` (1 through 1,000,000 per function). Exit 0 means the requested command succeeded, 1 indicates a source diagnostic, failed test, blocked proof or change requiring review, and 2 indicates an invocation, I/O, data-format or tool error. CI should require exit 0 and consume output from that invocation. Source diagnostics include a stable code, file and one-based line and column. Success of check is only static acceptance.
+
+To accept an intentional witnessed change, pass `--authorization POLICY` to
+gate from the trusted review workflow. Keep that file and the selected
+baseline under independent control. [Authorization format](docs/verification.md#authorizing-an-intentional-change)
 
 ## Scope
 

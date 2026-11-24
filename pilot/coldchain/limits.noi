@@ -1,0 +1,6 @@
+(module limits 1.0.0
+  ; The validated transport range includes both endpoints.
+  (fn excursion ((celsius i32)) bool
+    (reads) (requires true)
+    (ensures (= result (or (< celsius 2i32) (< 8i32 celsius))))
+    (not (and (<= 2i32 celsius) (<= celsius 8i32)))))

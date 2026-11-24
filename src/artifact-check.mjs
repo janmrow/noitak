@@ -12,7 +12,8 @@ export class ArtifactMismatch extends Error {
 export async function checkArtifact(unit, source, timeoutMs = 30000, witnesses = new Map(), vectors = []) {
   const entries = unit.functions.filter(f=>f.kind==='fn');
   const worker = new Worker(new URL('./artifact-worker.mjs',import.meta.url), {
-    workerData:{entries,source,witnesses,vectors}, execArgv:[]
+    workerData:{entries,source,witnesses,vectors,lookups:unit.lookups ?? []}, execArgv:[], env:{},
+    resourceLimits:{maxOldGenerationSizeMb:128, maxYoungGenerationSizeMb:32, stackSizeMb:4}
   });
   let timedOut = false;
   const timer = setTimeout(()=>{
@@ -39,8 +40,12 @@ export async function checkArtifact(unit, source, timeoutMs = 30000, witnesses =
                 Boolean(c.selectorExecutions) === Boolean(c.nonemptyCalls) &&
                 Number.isSafeInteger(c.emittedValues) && c.emittedValues >= 0 && c.emittedValues <= c.selectorExecutions))))
           return reject(new Error('Invalid artifact comparison report'));
+        const effects = reply.lookups ?? [];
+        if (!Array.isArray(effects) || effects.length !== (unit.lookups?.length ?? 0) || effects.some((c,i) =>
+          c?.service !== unit.lookups[i].name || c.authorizedCalls !== 4 || c.deniedCalls !== 3))
+          return reject(new Error('Incomplete scoped lookup artifact validation'));
         const status = checks.every(c => c.status === 'tested') ? 'tested' : 'incomplete';
-        resolve({status, method:'interpreter-differential-v2', timeoutMs, checks});
+        resolve({status, method:'interpreter-differential-v2', timeoutMs, checks, ...(effects.length && {lookups:effects})});
       });
     });
   } finally { clearTimeout(timer); }

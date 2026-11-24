@@ -1,4 +1,4 @@
-# Noitak 0.8
+# Noitak 0.10
 
 A source file holds one module. Forms are parenthesized, whitespace separates atoms, and a semicolon outside a quoted literal starts a line comment. LF, CRLF and CR each end one line. Positions count UTF-16 code units from one. Declaration order inside a function is fixed.
 
@@ -7,7 +7,7 @@ A source file holds one module. Forms are parenthesized, whitespace separates at
   (import MODULE SHA256) ...
   (enum ID (TAG [TYPE]) ...) ...
   (record ID (FIELD TYPE) ...) ...
-  (sequence ID ELEMENT CAPACITY) ...
+  (sequence ID ELEMENT CAPACITY [u32]) ...
   (outcome ID SUCCESS-TYPE) ...
   (reducer ID ((STATE S) (ITEM E)) S (reads ID ...) (capacity N)
     (invariant EXPR) (ensures EXPR) STEP) ...
@@ -16,29 +16,30 @@ A source file holds one module. Forms are parenthesized, whitespace separates at
     [(independent PARAM ...)]
     (requires EXPR)
     (ensures EXPR)
-    EXPR) ...)
+    EXPR) ...
+  (lookup SERVICE RESOURCE PLANNER RESUME) ...)
 ```
 
-The `fn` declaration exports a host entry point. A `helper` is private to the module. Names match `[a-z][a-z0-9_]*`. The value names true, false and result are reserved in declarations. Numbers and version components are unsigned decimal without redundant leading zeroes. Scalar types are byte (0 through 255), u32 (0 through 4,294,967,295), bool, uuid and text. Parameter order defines the positional host interface. Each function has its own variable environment. Duplicate declarations and local shadowing are errors.
+The `fn` declaration exports a host entry point. A `helper` is private to the module. Names match `[a-z][a-z0-9_]*`. The value names true, false and result are reserved in declarations. Numbers and version components are unsigned decimal without redundant leading zeroes. Scalar types are byte (0 through 255), u32 (0 through 4,294,967,295), i32 (−2,147,483,648 through 2,147,483,647), bool, uuid and text. Parameter order defines the positional host interface. Each function has its own variable environment. Duplicate declarations and local shadowing are errors.
 
 | Expression | Typing and evaluation |
 | --- | --- |
-| literal or variable | Byte, u32, text and boolean literals, or immutable lexical bindings |
+| literal or variable | Byte, u32, i32, text and boolean literals, or immutable lexical bindings |
 | `(let x e body)` | Evaluate e once, bind its type and value in body |
 | `(if c a b)` | c is bool, arms have equal types, evaluate only the selected arm |
 | `(+ a b)`, `(- a b)` | Equal integer operand types, checked result of the same type. Out-of-range arithmetic faults |
-| `(< a b)`, `(<= a b)` | Equal integer operand types, unsigned comparison, bool result |
+| `(< a b)`, `(<= a b)` | Equal integer operand types, signed comparison for i32, bool result |
 | `(widen a)` | Convert a byte to u32 exactly |
 | `(uuid 00112233-4455-6677-8899-aabbccddeeff)` | Canonical 128-bit identifier literal |
 | `(= a b)` | Equal operand types, exact value equality |
 | `(not a)`, `(and a b)`, `(or a b)` | Bool operands and result, short-circuit binary operators |
 | `(flag name)` | Bool from the declared named read capability |
 
-Strict operands evaluate left to right. Calls are acyclic. Repetition uses folds or reducer entries. Bindings are immutable and all conversions are explicit. The type rule for a conditional is Γ ⊢ c : bool, Γ ⊢ a : T, Γ ⊢ b : T ⇒ Γ ⊢ (if c a b) : T.
+Strict operands evaluate left to right. Calls are acyclic. Repetition uses typed folds and named reducers. Bindings are immutable and all conversions are explicit. The type rule for a conditional is Γ ⊢ c : bool, Γ ⊢ a : T, Γ ⊢ b : T ⇒ Γ ⊢ (if c a b) : T.
 
 Each call receives arguments and a snapshot of the authorized boolean flags. Both contracts must type as bool. The precondition sees parameters and flags. The postcondition also sees the normal return value as `result`. A false precondition rejects the call. A fault in a contract is a failure. After an admitted call the body must return normally and its postcondition must hold. The public result is a tagged union carrying either a value or an error code. See the generated declarations for the boundary types.
 
-Every declared flag is required at entry, including unused declarations. The only effect is reading these supplied values. No operation opens a file, invokes a callback or changes the host. Application code decides how to obtain and authorize flag values.
+Every declared flag is required at entry, including unused declarations. Ordinary functions and reducers read only the supplied snapshot. A lookup service can compose two ordinary functions with a separately granted host operation.
 
 ## Host boundary
 
@@ -52,6 +53,7 @@ A byte argument must be an integer-valued JS number in range. Negative zero beco
 | CAPABILITY | boundary | Invalid flag object or required property |
 | PRECONDITION | requires | False admission predicate |
 | ARITHMETIC | requires, body or ensures | Checked addition or subtraction outside the operand type range |
+| CAPACITY | requires, body or ensures | Append to a full sequence |
 | POSTCONDITION | ensures | False return predicate |
 | CALL_PRECONDITION, CALL_POSTCONDITION | body | A reached private call rejects its arguments or its result |
 
@@ -95,15 +97,15 @@ Each source revision loads at most 64 regular source files of up to 1 MiB each. 
 
 ## Bounded sequences and recoverable admission (0.5)
 
-`(sequence events action 3)` declares immutable ordered values of length zero through three. Capacities are integer literals from 1 through 255. `(items events a b)` constructs a sequence and `(length xs)` returns a byte. Equality compares length, order and every element. JavaScript supplies dense arrays of own typed data properties. The boundary checks capacity before copying elements. TypeScript exposes `ReadonlyArray` and runtime enforces its length. `(member xs item)` evaluates both operands once in order, including the item for an empty sequence. It returns a boolean using structural equality. Its static work estimate charges the declared capacity.
+`(sequence events action 3)` declares immutable ordered values of length zero through three. Capacities are integer literals from 1 through 255 by default. `(sequence events action 512 u32)` opts into a u32 length and index. This form accepts capacities through 65,535 subject to the compiler’s lower expanded-layout and work budgets. `(items events a b)` constructs a sequence and `(length xs)` returns the declared index type. Equality compares length, order and every element. JavaScript supplies dense arrays of own typed data properties. The boundary checks capacity before copying elements. TypeScript exposes `ReadonlyArray` and runtime enforces its length. `(member xs item)` evaluates both operands once in order, including the item for an empty sequence. It returns a boolean using structural equality. Its static work estimate charges the declared capacity.
 
-`(fold xs initial (acc item index) expression)` evaluates the sequence and initial value once, then evaluates the expression from left to right for each present element. The accumulator and step have the same type. Indices are zero-based bytes. An empty sequence returns the initial value. The maximum step count is the declared capacity. Folds may appear in contracts. Function calls remain restricted to bodies.
+`(fold xs initial (acc item index) expression)` evaluates the sequence and initial value once, then evaluates the expression from left to right for each present element. The accumulator and step have the same type. Indices are zero-based and have the declared index type. An empty sequence returns the initial value. The maximum step count is the declared capacity. Folds may appear in contracts. Function calls remain restricted to bodies.
 
 `(outcome answer state)` declares a nominal tagged value with alternatives `committed state` and `rejected byte`. `(attempt answer index target arg ...)` evaluates the index, arguments and target precondition in order. False admission returns `rejected index`. On admission, it executes the callee and checks its guarantee, returning `committed value`. Arithmetic faults and failed guarantees invalidate the caller's proof. A fold can retain its first rejection in subsequent iterations and return only the index, which gives the host a value it can use for an all-or-nothing update.
 
 ## Wide quantities and identifiers
 
-A bare decimal literal has type byte. A decimal literal ending in `u32`, such as `100000u32`, has type u32. Both are range checked at compile time. Arithmetic checks the result range in every evaluation phase. Mixed arithmetic requires explicit widening. At the host boundary both types require primitive integer-valued numbers within range. Negative zero normalizes to zero.
+A bare decimal literal has type byte. A decimal literal ending in `u32`, such as `100000u32`, has type u32. Both are range checked at compile time. A signed literal ends in `i32`, for example `-800i32`. Signed addition and subtraction fault on overflow or underflow. Signed comparison uses numeric order. Division, multiplication and conversions to or from i32 are currently absent. Arithmetic checks the result range in every evaluation phase. Mixed arithmetic requires explicit widening. At the host boundary both types require primitive integer-valued numbers within range. Negative zero normalizes to zero.
 
 A uuid holds any 128-bit pattern. Its host representation uses exactly 36 lowercase ASCII characters in hexadecimal groups of 8-4-4-4-12. Equality compares all bits. The boundary rejects alternate spellings, boxed strings and coercions. UUID version, issuance, ownership and uniqueness belong to the application. These scalars are available in fields, payloads, sequences and contracts.
 
@@ -118,7 +120,7 @@ A uuid holds any 128-bit pattern. Its host representation uses exactly 36 lowerc
   (if flip (not state) state))
 ```
 
-Call `api.parity({}, initialState, flips)` with a dense array. The second declaration parameter names one element in the step. The output type must equal the state type. The invariant sees the current state and declared grants. The step and its guarantee also see the current element, and the guarantee sees the next state as `result`. The host can pass the returned state to a subsequent chunk under the next call's admission check. A step may call earlier helpers and ordinary imported functions. Reducers are host entries and cannot be call targets. The independent clause applies to ordinary functions and helpers.
+Call `api.parity({}, initialState, flips)` with a dense array. The second declaration parameter names one element in the step. The output type must equal the state type. The invariant sees the current state and declared grants. The step and its guarantee also see the current element, and the guarantee sees the next state as `result`. The host can pass the returned state to a subsequent chunk under the next call's admission check. A step may call earlier helpers and ordinary imported functions. Reducers are host entries and can also be composed with `reduce` in a body. The independent clause applies to ordinary functions and helpers.
 
 Entry validates and copies the initial state and the entire array, then snapshots grants once. A malformed tail yields ARGUMENT even after a row that would cause a business rejection. Entry checks the initial invariant, including for empty arrays. A false initial invariant yields PRECONDITION. In input order, each step checks admission, computes the next state and checks the invariant there and the explicit step guarantee. A false exit check yields POSTCONDITION. The empty array returns a fresh value equal to the admitted initial state. A business rejection can be represented in the state and retained by later steps. The host decides whether to commit.
 
@@ -168,3 +170,56 @@ Static work charges the selector, a visit and a worst-case emitted value copy
 per possible input element, plus construction of the output array. The
 ordinary entry work limit applies. Collector entries have no source-level
 whole-array contract and cannot be called from expressions.
+
+## Composing sequence computations
+
+`(append xs item)` evaluates the sequence and item in that order. The item must
+have the nominal element type. At capacity the operation faults with
+`CAPACITY`. Otherwise it returns a sequence of the same type with the item
+after the existing elements. It leaves the input untouched. Its work estimate
+charges the full sequence capacity for the copy. Appending repeatedly can take
+quadratic work in the number of emitted elements.
+
+Ordinary functions can use a fold with any typed accumulator, including a
+sequence or a record containing multiple sequences and a tagged failure.
+Functions can call helpers before, during and after the fold. Contracts can
+use fold, length and membership over both arguments and the complete result.
+
+`(reduce reducer initial xs)` can target an earlier local reducer or a
+directly imported reducer by qualified name. The initial value has the
+reducer’s state type. The sequence has the reducer’s item type and a capacity
+within the reducer’s declared limit. The caller declares all the reducer’s
+reads. The expression evaluates the initial value and sequence in that order,
+checks the invariant even for an empty sequence, then executes the checked
+transition in sequence order. Invariant admission failure is a
+`CALL_PRECONDITION` fault. The state returned after the last element has the
+same type as the initial value. `call` and `attempt` target ordinary frames.
+
+## Capability-scoped lookups
+
+`(lookup replenish stockroom stock_key decide)` exports
+`services.replenish` alongside the two ordinary functions in `api`.
+`stock_key` must return text. `decide` must accept the same positional
+argument types followed by an enum with `found` carrying a typed value and
+the nullary variants `missing` and `unavailable`. Its precondition is
+literal `true`. Both stages must be local ordinary public functions. Imports
+link the pure functions under their usual pins. Lookup declarations export
+services from the entry module only.
+
+A trusted JS or TypeScript host calls `grantLookup(resource, allowedKeys, read)`
+and keeps the returned token. The artifact snapshots up to 4,096 exact text
+keys. The service takes the token followed by the flags object and planner
+arguments. It checks the token identity and namespace, snapshots arguments
+and both stages’ required flags, runs the checked planner, and checks exact
+key membership before calling the handler once. The handler is synchronous
+and receives only the validated key. A thrown handler produces the
+`unavailable` reply. A response that fails the enum or payload checks produces
+`RESOURCE_RESPONSE` at the boundary. The service invokes the continuation on
+the snapshots and decoded reply and returns a fresh value.
+
+The token is local to its artifact instance. Ordinary Noitak values carry
+no capability identity. The host controls grant issuance, handler behavior,
+data freshness and external deadlines. The effect observes the resource, key
+and occurrence of a request. A stage’s `independent` declaration retains its
+ordinary admission and return-value meaning. The service itself has no
+noninterference proof.

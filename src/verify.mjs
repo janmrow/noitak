@@ -5,7 +5,7 @@ import { solve, symbolicConfig, usesSymbolic } from './symbolic.mjs';
 import { checkIndependence } from './independence.mjs';
 import { crosscheck, CROSSCHECK_LIMIT } from './crosscheck.mjs';
 
-export const VERSION = '0.9.0';
+export const VERSION = '0.10.0';
 export const DEFAULT_LIMIT = 65536;
 export const hash = data => createHash('sha256').update(data).digest('hex');
 
@@ -56,6 +56,18 @@ function collectorObligations(f, selectorSafety) {
 }
 
 export function verify(unit, source, limit, engine = 'enumerate') {
+  return verifyRevision(unit, source, limit, engine);
+}
+
+// Entries live for exactly one trusted comparison. Neither the CLI nor the API
+// can import proof objects into this table. A failed obligation is never reused.
+export function verifyPair(baseline, candidate, limit, engine = 'enumerate') {
+  const table = new Map();
+  return [baseline, candidate].map(({unit, bytes}) =>
+    verifyRevision(unit, bytes, limit, engine, table));
+}
+
+function verifyRevision(unit, source, limit, engine, table) {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000000)
     throw new Error('Case limit must be an integer from 1 to 1000000');
   if (!['enumerate', 'symbolic', 'auto'].includes(engine)) throw new Error('Unknown verification engine');
@@ -69,7 +81,32 @@ export function verify(unit, source, limit, engine = 'enumerate') {
   }
   const types = unit.types;
   const safetyByName = new Map();
+  const byName = new Map(unit.functions.map(f => [f.name, f]));
+  const keys = new Map();
+  const dependencies = unit.dependencies ?? {};
+  const assumptionsSha256 = hash(JSON.stringify([VERSION, unit.name, types, dependencies, configuration]));
+  let reusedFunctions = 0;
   const checks = unit.functions.flatMap(f => {
+    const {loc, ...definition} = f;
+    const dependsOn = f.calls.map(name => {
+      if (!keys.has(name)) throw new Error('Missing checked dependency: ' + name);
+      return keys.get(name);
+    });
+    const key = hash(JSON.stringify([assumptionsSha256, definition, dependsOn]));
+    keys.set(f.name, key);
+    let results = table?.get(key);
+    if (results) {
+      reusedFunctions++;
+      results = structuredClone(results);
+    } else {
+      results = prove(f);
+      if (table && results.every(c => c.status === 'proven')) table.set(key, results);
+    }
+    safetyByName.set(f.name, results.find(c => c.property === 'admissible-and-safe'));
+    return results.map(check => ({...check, loc, obligationId: unit.name + '/' + f.name + '/' + check.property,
+      definitionSha256: key, dependsOn}));
+  });
+  function prove(f) {
     if (f.collector) return collectorObligations(f, safetyByName.get(f.collector));
     const domain = domainOf(f).total;
     const symbolic = usesSymbolic(configuration, domain);
@@ -77,9 +114,19 @@ export function verify(unit, source, limit, engine = 'enumerate') {
     const identity = { function: f.name, visibility: f.kind === 'helper' ? 'private' : f.kind === 'imported' ? 'imported' : 'public',
       loc: f.loc, method: symbolic ? 'symbolic' : 'enumerate', domain: sizeLabel(domain) };
     const finiteSafety = () => obligation(f, limit);
-    const safety = symbolic ? audit(solve(f, types), finiteSafety) : finiteSafety();
+    // Use summaries on finite numeric or structural domains. Abstracting a
+    // call over text can introduce quantified bounds on new sequence terms,
+    // even where the implementation has a decidable concrete reduction.
+    let contracts;
+    if (symbolic && engine === 'auto' && domain !== null && f.calls.length &&
+        f.calls.every(name => safetyByName.get(name)?.status === 'proven')) {
+      contracts = Object.fromEntries(f.calls.map(name => {
+        const {params, output, requires, ensures} = byName.get(name);
+        return [name, {params, output, requires, ensures}];
+      }));
+    }
+    const safety = symbolic ? audit(solve(f, types, undefined, contracts), finiteSafety) : finiteSafety();
     const results = [{ ...identity, property: 'admissible-and-safe', ...safety }];
-    safetyByName.set(f.name, results[0]);
     if (f.capacity) {
       results[0].scope = 'one-transition';
       // Base case checks the initial invariant even on empty input. The compiled
@@ -102,11 +149,15 @@ export function verify(unit, source, limit, engine = 'enumerate') {
       results.push({ ...identity, property: 'observable-independence', parameters: f.independent, ...flow });
     }
     return results;
-  });
+  }
   return { schema: 8, toolVersion: VERSION, module: unit.name, version: unit.version,
     sourceSha256: hash(source), dependencies: unit.dependencies ?? {}, configuration,
     calls: Object.fromEntries(unit.functions.map(f => [f.name, f.calls])),
+    resourceEstimates: Object.fromEntries(unit.functions.map(f => [f.name, f.budget])),
     permissions: Object.fromEntries(unit.functions.map(f => [f.name, f.reads])),
+    verificationSession: {assumptionsSha256, reusedFunctions, checkedFunctions: keys.size - reusedFunctions},
+    ...(unit.lookups?.length && {lookups:unit.lookups, effectAssumptions:['trusted-host-handler', 'runtime-validated-response'],
+      effectObservations:['resource', 'bounded-text-key', 'request-occurrence'], serviceIndependence:'unverified'}),
     policy: 'require-all-declared-obligations',
     enforced: [
       {property: 'types-and-declared-reads', method: 'static'},

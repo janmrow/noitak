@@ -1,6 +1,6 @@
 {
   "name": "noitak",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "license": "Apache-2.0",
   "private": true,
   "type": "module",
@@ -13,7 +13,9 @@
     "pilot:batch": "node pilot/support/run-batch.mjs",
     "release:check": "node scripts/release.mjs",
     "pilot:components": "node pilot/topics/compare.mjs",
-    "pilot:collect": "node pilot/collect/run.mjs"
+    "pilot:collect": "node pilot/collect/run.mjs",
+    "pilot:inventory": "node pilot/inventory/run.mjs",
+    "bench:changes": "node pilot/coldchain/benchmark.mjs"
   },
   "engines": {
     "node": ">=22"
@@ -21,7 +23,7 @@
   "devDependencies": {
     "typescript": "5.9.3"
   },
-  "description": "Verification-first language for typed components and change-controlled data processing",
+  "description": "Verification-first language for composable programs and capability-scoped host services",
   "bin": {
     "noitak": "noitak.mjs"
   },
@@ -58,7 +60,14 @@
     "pilot/events/collect.noi",
     "pilot/collect/vectors.json",
     "pilot/collect/service.mts",
-    "pilot/collect/reference.mts"
+    "pilot/collect/reference.mts",
+    "src/lookup-runtime.js.inc",
+    "docs/release-0.10.md",
+    "pilot/inventory/inventory.noi",
+    "pilot/inventory/service.mts",
+    "pilot/coldchain/*.noi",
+    "pilot/coldchain/*.mts",
+    "pilot/coldchain/vectors.json"
   ],
   "repository": {
     "type": "git",

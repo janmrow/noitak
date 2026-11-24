@@ -1,7 +1,11 @@
 // Inlined after the host boundary in each standalone artifact.
-function inRange(value, max) {
-  if (value < 0 || value > max) throw new RangeFault();
+function inRange(value, max, min = 0) {
+  if (value < min || value > max) throw new RangeFault();
   return value;
+}
+
+function rejectNested() {
+  throw new CallFault('CALL_PRECONDITION');
 }
 
 function nested(index, target, flags, args) {
@@ -35,6 +39,13 @@ function runCompiled(entry, values, flags) {
     if (e instanceof CallFault) return error(e.code,phase);
     throw e;
   }
+}
+
+function appendItem(values, item, capacity) {
+  if (values.length >= capacity) throw new CallFault('CAPACITY');
+  const copy = values.slice();
+  copy.push(item);
+  return copy;
 }
 
 function stripPrefix(value, prefix) {

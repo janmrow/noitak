@@ -102,11 +102,48 @@ if (post) {
 }
 const module = await import(url);
 const api = module.api;
-if (!isDeepStrictEqual(Object.keys(module),['api']) || !api || Object.getPrototypeOf(api) !== null ||
+const lookups = workerData.lookups;
+const exports = lookups.length ? ['api', 'grantLookup', 'services'] : ['api'];
+if (!isDeepStrictEqual(Object.keys(module),exports) || !api || Object.getPrototypeOf(api) !== null ||
     !Object.isFrozen(api) || Reflect.ownKeys(api).length !== workerData.entries.length ||
     !workerData.entries.every(f=>typeof Object.getOwnPropertyDescriptor(api,f.name)?.value === 'function'))
   throw new Error('Unexpected public surface in emitted module');
 const report = check(api,workerData.entries,workerData.witnesses,workerData.vectors);
+if (lookups.length && !report.witness) {
+  if (typeof module.grantLookup !== 'function' || Object.getPrototypeOf(module.services) !== null ||
+      !Object.isFrozen(module.services) ||
+      !isDeepStrictEqual(Reflect.ownKeys(module.services).sort(), lookups.map(s => s.name).sort()))
+    throw new Error('Unexpected service exports');
+  report.lookups = lookups.map(s => {
+    const planner = workerData.entries.find(f => f.name === s.planner);
+    const resume = workerData.entries.find(f => f.name === s.resume);
+    const admission = workerData.witnesses.get(planner.name) ?? {args:planner.params.map(([,t]) => sampleValue(t,0)), flags:{}};
+    const flags = {...Object.fromEntries(s.reads.map(k => [k,false])), ...admission.flags};
+    const args = admission.args, expectedKey = invoke(planner,flags,args);
+    if (!expectedKey.ok) throw new Error('Missing admitted lookup key for ' + s.name);
+    const call = token => module.services[s.name](token,flags,...args);
+    const denied = {ok:false,code:'CAPABILITY',phase:'boundary'};
+    let calls = 0;
+    const unwanted = () => { calls++; };
+    for (const token of [{},module.grantLookup(s.resource,[],unwanted),
+      module.grantLookup(s.resource + '-', [expectedKey.value],unwanted)]) {
+      if (!isDeepStrictEqual(call(token),denied) || calls) throw new Error('Lookup scope mismatch');
+    }
+    const found = {tag:'found',value:sampleValue(resume.params.at(-1)[1].variants[0].payload,0)};
+    for (const reply of [found,{tag:'missing'},{tag:'unavailable'},null]) {
+      const observed = [];
+      const token = module.grantLookup(s.resource,[expectedKey.value],key => {
+        observed.push(key);
+        if (reply?.tag === 'unavailable') throw new Error('unavailable');
+        return reply;
+      });
+      const expected = reply ? invoke(resume,flags,[...args,reply]) : {ok:false,code:'RESOURCE_RESPONSE',phase:'boundary'};
+      if (!isDeepStrictEqual(call(token),expected) || !isDeepStrictEqual(observed,[expectedKey.value]))
+        throw new Error('Lookup dispatch or response mismatch for ' + s.name);
+    }
+    return {service:s.name, authorizedCalls:4, deniedCalls:3};
+  });
+}
 if (post) {
   const {result} = await post('Profiler.takePreciseCoverage');
   session.disconnect();

@@ -23,6 +23,8 @@ jobs:
       - run: npm run pilot:batch -- build/batch
       - run: npm run pilot:components -- build/components
       - run: npm run pilot:collect -- build/collect
+      - run: npm run pilot:inventory -- build/inventory
+      - run: npm run bench:changes -- build/coldchain
       - run: npm run release:check -- build/distribution
       - uses: actions/upload-artifact@v4
         with:
@@ -39,3 +41,5 @@ jobs:
             build/batch/
             build/components/
             build/collect/
+            build/inventory/
+            build/coldchain/

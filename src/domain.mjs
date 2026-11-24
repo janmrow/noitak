@@ -6,15 +6,14 @@ export const exceeds = (size, limit) => size === null || size > BigInt(limit);
 export function cardinality(type) {
   if (type === 'text') return null;
   if (type === 'uuid') return 1n << 128n;
-  if (type === 'u32') return 1n << 32n;
+  if (type === 'i32' || type === 'u32') return 1n << 32n;
   if (type === 'byte') return 256n;
   if (type === 'bool') return 2n;
   if (type.element) {
     const size = cardinality(type.element);
     if (size === null) return null;
-    let total = 1n;
-    for (let length = 1; length <= type.capacity; length++) total = 1n + size * total;
-    return total;
+    if (size === 1n) return BigInt(type.capacity + 1);
+    return (size ** BigInt(type.capacity + 1) - 1n) / (size - 1n);
   }
   if (type.fields) return type.fields.reduce((n, [, t]) => productSize(n, cardinality(t)), 1n);
   let total = 0n;
@@ -32,6 +31,7 @@ export function valueAt(type, index) {
     const hex = digit.toString(16).padStart(32, '0');
     return [hex.slice(0,8), hex.slice(8,12), hex.slice(12,16), hex.slice(16,20), hex.slice(20)].join('-');
   }
+  if (type === 'i32') return Number(digit) - 2147483648;
   if (type === 'byte' || type === 'u32') return Number(digit);
   if (type === 'bool') return Boolean(digit);
   if (type.element) {
