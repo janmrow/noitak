@@ -29,6 +29,8 @@ function declarations({ functions, enums, records, types }) {
     lines.push('export type ' + ts(t) + ' = ReadonlyArray<' + ts(t.element) + '>;');
   lines.push('export declare const api: {');
   for (const f of functions.filter(f => f.kind === 'fn')) {
+    if (f.collector)
+      lines.push('  /** Ordered selection. Maximum input length: ' + f.params[0][1].capacity + '. */');
     if (f.capacity)
       lines.push('  /** Ordered reduction. Maximum input length: ' + f.capacity + '. */');
     if (f.independent.length)

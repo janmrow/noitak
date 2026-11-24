@@ -83,6 +83,21 @@ try {
     assert.equal(mayRead(...v.args,v.flags.system_topics),v.expected.ok && v.expected.value.tag === 'allow');
   }
   console.log('Installed text policy, vector digest and strict TypeScript caller passed.');
+  const collectorSource = join(host,'node_modules/noitak/pilot/events/collect.noi');
+  const collectorPilot = join(host,'node_modules/noitak/pilot/collect');
+  const collectorVectors = join(collectorPilot,'vectors.json');
+  const collection = JSON.parse(run(cli,['gate',collectorSource,collectorSource,'collect/verified',
+    '--engine','auto','--vectors',collectorVectors,'--json'],host));
+  assert.ok(collection.passed && collection.after.checks.some(c=>c.property==='ordered-emissions' && c.status==='proven'));
+  const evidence = collection.artifactValidation;
+  const vectorBytes = readFileSync(collectorVectors);
+  assert.equal(evidence.vectorsSha256,createHash('sha256').update(vectorBytes).digest('hex'));
+  assert.ok(evidence.checks[0].selectorExecutions > 0 && evidence.checks[0].emittedValues > 0);
+  copyFileSync(join(collectorPilot,'service.mts'),join(host,'collect/service.mts'));
+  run(process.execPath,[join(root,'node_modules/typescript/bin/tsc'),'--strict','--module','nodenext','collect/service.mts'],host);
+  const {collect} = await import(pathToFileURL(join(host,'collect/service.mjs')));
+  for (const v of JSON.parse(vectorBytes)) assert.deepEqual(collect(...v.args),v.expected);
+  console.log('Installed webhook collector returned the ordered jobs through its strict TypeScript caller.');
   writeFileSync(join(staged,'SHA256SUMS'),digest+'  '+basename(archive)+'\n');
   await publishDirectory(staged,output);
   console.log('Installed CLI, packaged solver, gated bundle and host call passed.');

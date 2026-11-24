@@ -135,3 +135,36 @@ Capacity is a literal from 1 through 65,535. The compiler limits (capacity + 1) 
 | `(strip-prefix s p)` | The suffix after one matching prefix, otherwise the original text |
 
 The empty pattern matches at both ends and within every string. Removing it preserves the input. All operations are total on valid values and evaluate operands in order. Stripping can only shorten a value. An application requiring missing text can declare `(enum optional_text (missing) (present text))`. Missing required JS fields are boundary errors, and an explicit missing tag is a value the program can handle.
+
+## Ordered collectors
+
+```noi
+(collect queued_jobs deliveries jobs
+  (reads)
+  (using select_job))
+```
+
+A collector is a public entry with one named sequence type for its input and one
+for its output. Its selector must be a previously declared helper or a directly
+imported ordinary function. Calls resolve to the checked selector under the
+same exact import pins as ordinary calls. The selector takes one parameter of
+the nominal input element type and returns an enum with exactly two variants.
+`skip` has no payload and `emit` carries exactly one value of the nominal
+output element type. The selector must explicitly declare `(requires true)`.
+The collector declares every read in the selector's interface, including reads
+required by its transitive calls.
+
+The host supplies a flags object and one input array. The boundary validates
+and snapshots the entire input before computation, then snapshots the grants
+once. The collector visits the decoded elements once from left to right. It
+appends the value of each `emit` and keeps duplicate emissions. Empty input and
+all-skipped input return an empty array. The boundary returns a fresh dense
+array and materializes each structured element independently. A malformed
+input fails at the boundary. A reached selector fault fails the invocation
+with its execution phase and exposes no partial output.
+
+The declared output capacity must be at least the declared input capacity.
+Static work charges the selector, a visit and a worst-case emitted value copy
+per possible input element, plus construction of the output array. The
+ordinary entry work limit applies. Collector entries have no source-level
+whole-array contract and cannot be called from expressions.

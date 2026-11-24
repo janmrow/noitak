@@ -360,6 +360,34 @@ function fn(node, types, helpers, prefix) {
     body: bodyIR, calls: [...calls].sort(), budget, loc: id.loc };
 }
 
+function collector(node, types, helpers, prefix) {
+  const [id, inputNode, outputNode, effects, using] = form(node, 'collect', 6);
+  const input = type(inputNode, types), output = type(outputNode, types);
+  if (!input.element || !output.element)
+    fail(node, 'E_TYPE', 'Collector input and output must be sequences');
+  if (output.capacity < input.capacity)
+    fail(outputNode, 'E_LIMIT', 'Collector output capacity must cover its input capacity');
+  const [target] = form(using, 'using', 2);
+  const selector = helpers.get(target.atom);
+  if (!selector) fail(target, 'E_NAME', 'Unknown collector selector: ' + target.atom);
+  if (selector.params.length !== 1 || selector.params[0][1] !== input.element)
+    fail(target, 'E_TYPE', 'Collector selector must take one input element');
+  const variants = selector.output.variants;
+  if (variants?.length !== 2 || variants[0].tag !== 'emit' ||
+      variants[0].payload !== output.element || variants[1].tag !== 'skip' || variants[1].payload !== null)
+    fail(target, 'E_TYPE', 'Collector selector must return skip or emit with one output element');
+  if (selector.requires !== true) fail(target, 'E_FORM', 'Collector selector must declare (requires true)');
+  const grants = new Map();
+  for (const item of form(effects, 'reads')) bind(grants, item, 'bool');
+  const reads = [...grants.keys()].sort();
+  if (selector.reads.some(key => !grants.has(key)))
+    fail(target, 'E_EFFECT', 'Collector must declare every selector read');
+  const work = 1 + input.capacity * (1 + selector.budget.work + snapshotSize(output.element));
+  return { name: prefix + name(id), kind: 'fn', collector: selector.name,
+    params: [['items', input]], output, reads, independent: [],
+    calls: [selector.name], budget: {work, depth: selector.budget.depth}, loc: id.loc };
+}
+
 export function importsOf(root) {
   const imports = new Map();
   for (const node of form(root, 'module').slice(2).filter(node => node.items?.[0]?.atom === 'import')) {
@@ -387,7 +415,8 @@ export function compileModule(root, dependencies, prefix = '') {
     for (const t of dep.unit.types) allTypes.set(t.name, t);
     for (const f of dep.unit.functions) allFunctions.set(f.name, f);
     for (const t of dep.unit.localTypes) types.set(t.name, t);
-    for (const f of dep.unit.localFunctions) if (f.kind === 'imported' && !f.capacity) helpers.set(f.name, f);
+    for (const f of dep.unit.localFunctions)
+      if (f.kind === 'imported' && !f.capacity && !f.collector) helpers.set(f.name, f);
   }
   const localTypes = [], localFunctions = [];
   const tag = node => node.items?.[0]?.atom;
@@ -432,7 +461,7 @@ export function compileModule(root, dependencies, prefix = '') {
   }
   for (const key of definitions.keys()) resolveType(key);
   for (const node of defs.filter(n => tag(n) !== 'import' && !kinds.has(tag(n)))) {
-    const f = fn(node, types, helpers, prefix);
+    const f = tag(node) === 'collect' ? collector(node, types, helpers, prefix) : fn(node, types, helpers, prefix);
     const local = bind(seen, node.items[1], f);
     if (f.budget.work > 16384 || f.budget.depth > 192) fail(node, 'E_LIMIT', 'Expression work or depth exceeds limit');
     if (f.capacity && (f.capacity + 1) * f.budget.work > 4000000)

@@ -1,7 +1,9 @@
 const claims = {
   requires: 'Previously admitted calls remain admitted.',
   ensures: 'On jointly admitted calls, every permitted candidate result meets the baseline guarantee.',
-  body: 'Both implementations return the same value on jointly admitted calls.'
+  body: 'Both implementations return the same value on jointly admitted calls.',
+  'selector-guarantee': 'Every permitted candidate selector result meets the baseline row guarantee.',
+  'selector-contribution': 'Both selectors make the same contribution for each typed row.'
 };
 
 export function formatReview(report) {
@@ -15,7 +17,8 @@ export function formatReview(report) {
       lines.push('Review claim: ' + claims[c.field]);
       lines.push(`Method: ${c.method}. Potential cases: ${c.comparisonDomain}`);
       if (c.scope === 'one-transition') lines.push('Reducer comparison uses one item and an admitted starting state.');
-      if (c.field === 'body') {
+      if (c.scope === 'one-row') lines.push('Collector comparison uses the checked selector under fixed grants.');
+      if (['body', 'selector-contribution'].includes(c.field)) {
         const calls = new Set([...(report.before.calls?.[c.subject] ?? []), ...(report.after.calls?.[c.subject] ?? [])]);
         if (calls.size) lines.push('Direct calls: ' + [...calls].join(', '));
       }
@@ -26,8 +29,8 @@ export function formatReview(report) {
         const w = c.witness;
         const args = Object.fromEntries(c.parameters.map((name, i) => [name, w.args[i]]));
         lines.push('Arguments ' + JSON.stringify(args) + ', flags ' + JSON.stringify(w.flags));
-        if (c.field === 'ensures') lines.push('Hypothetical return value: ' + JSON.stringify(w.result));
-        if (c.field === 'body') lines.push('Observed calls on this input:');
+        if (w.result !== undefined) lines.push('Hypothetical return value: ' + JSON.stringify(w.result));
+        if (c.field === 'body' || c.witnessKind === 'observed-one-row-batch') lines.push('Observed calls on this input:');
         lines.push('Baseline ' + JSON.stringify(w.before) + ', candidate ' + JSON.stringify(w.after));
       }
     } else if (c.proofStatus) {

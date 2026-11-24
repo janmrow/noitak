@@ -15,6 +15,12 @@ node noitak.mjs build pilot/events/events.noi build/dispatch --engine auto --vec
 
 Import `api.dispatch_push` from `build/dispatch/module.mjs`. Pass a repository, a tagged change, and up to 128 labels in the delivery argument, followed by a trace string. A deleted branch returns an ignored decision. An admitted branch push returns a typed job whose urgency follows label membership. Applications supply their own webhook authentication and scheduling. The comparison writes `comparison.json`, both generated components, strict TypeScript consumers and two refused policy reviews. [Delivery examples](pilot/events/vectors.json) · [Topic service](pilot/topics/service.mts)
 
+The webhook collector moves batch selection into the component. Pass up to 32
+typed deliveries to `api.queued_jobs` and receive a typed array of jobs in
+delivery order, including duplicates. Run `npm run pilot:collect -- build/collect`
+to reproduce the selector proof, accepted rewrite, rejected lost-job change
+and reversed-backend test. [Collector](pilot/events/collect.noi) · [Strict TypeScript caller](pilot/collect/service.mts) · [0.9 assessment](docs/release-0.9.md)
+
 ## Use a component in TypeScript
 
 The metering reducer reconciles ordered readings against a meter's serial number and quota. It accepts up to 8,192 records per call. The verifier checks one transition for every valid state and reading, then uses induction to establish that usage stays within quota after every prefix. A separate tenant-access policy checks ownership, revocation, delegated grants and expiration using canonical identifiers. [Metering component](pilot/metering/metering.noi) · [TypeScript consumer](pilot/metering/service.mts) · [Access policy](pilot/access/access.noi)
@@ -33,7 +39,7 @@ In a TypeScript application, install the checked tarball as a dev dependency. Pl
 
 ```sh
 sha256sum --check SHA256SUMS
-npm install --save-dev ./noitak-0.8.0.tgz
+npm install --save-dev ./noitak-0.9.0.tgz
 python -m pip install -r node_modules/noitak/requirements-symbolic.txt
 npx --no-install noitak verify node_modules/noitak/pilot/metering/metering.noi --engine auto
 npx --no-install noitak build node_modules/noitak/pilot/metering/metering.noi meter/verified --engine auto

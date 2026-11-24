@@ -33,7 +33,11 @@ export async function checkArtifact(unit, source, timeoutMs = 30000, witnesses =
             !checks.every((c,i)=>c.function === entries[i].name && Number.isSafeInteger(c.cases) &&
               c.cases > 0 && Number.isSafeInteger(c.returned) && c.returned >= 0 && c.returned <= c.cases &&
               Number.isSafeInteger(c.admittedBodies) && c.admittedBodies >= 0 && c.admittedBodies <= c.returned &&
-              c.status === (c.admittedBodies ? 'tested' : 'incomplete')))
+              c.status === (c.admittedBodies ? 'tested' : 'incomplete') &&
+              (!entries[i].collector || (c.nonemptyCalls === c.admittedBodies &&
+                Number.isSafeInteger(c.selectorExecutions) && c.selectorExecutions >= c.nonemptyCalls &&
+                Boolean(c.selectorExecutions) === Boolean(c.nonemptyCalls) &&
+                Number.isSafeInteger(c.emittedValues) && c.emittedValues >= 0 && c.emittedValues <= c.selectorExecutions))))
           return reject(new Error('Invalid artifact comparison report'));
         const status = checks.every(c => c.status === 'tested') ? 'tested' : 'incomplete';
         resolve({status, method:'interpreter-differential-v2', timeoutMs, checks});

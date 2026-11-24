@@ -122,7 +122,7 @@ export async function emitModule(unit) {
   const frames = new Map();
   for (const f of entries) {
     for (const [name,frame] of Object.entries(f.graph)) frames.set(name,frame);
-    frames.set(f.name,[f.params.map(([name])=>name),f.requires,f.body,f.ensures]);
+    if (!f.collector) frames.set(f.name,[f.params.map(([name])=>name),f.requires,f.body,f.ensures]);
   }
   const targets = new Map([...frames.keys()].map((name,i)=>[name,'frame'+i]));
   const [boundary, execution] = await Promise.all(['boundary.mjs','compiled-runtime.js.inc'].map(
@@ -134,6 +134,22 @@ export async function emitModule(unit) {
   lines.push('export const api = Object.create(null);');
   for (const [i,f] of entries.entries()) {
     const layout = {params:f.params, output:f.output, reads:f.reads, capacity:f.capacity};
+    if (f.collector) {
+      lines.push('const entry' + i + ' = ' + literal(layout) + ';',
+        'function selectRow' + i + '(row, snapshot) {',
+        '  return runCompiled(' + targets.get(f.collector) + ', [row], snapshot);',
+        '}',
+        'api[' + literal(f.name) + '] = (flags, ...args) => atBoundary(entry' + i + ', flags, args, (_entry, [rows], snapshot) => {',
+        '  const output = [];',
+        '  for (const row of rows) {',
+        '    const contribution = selectRow' + i + '(row, snapshot);',
+        '    if (!contribution.ok) return contribution;',
+        '    if (contribution.value.tag === "emit") output.push(contribution.value.value);',
+        '  }',
+        '  return {ok:true,value:output};',
+        '}, readers);');
+      continue;
+    }
     lines.push('const entry' + i + ' = Object.assign(' + literal(layout) + ', ' + targets.get(f.name) + ');',
       'api[' + literal(f.name) + '] = (flags, ...args) => atBoundary(entry' + i + ', flags, args, runCompiled, readers);');
   }

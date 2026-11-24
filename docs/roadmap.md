@@ -1,5 +1,19 @@
 # Noitak roadmap
 
+## 0.9 disposition
+
+The webhook collector now returns up to 32 CI jobs in delivery order. A
+verified row selector and a trusted traversal rule establish its output bound
+and per-element guarantee. The gate compares changes to the selector, and a
+mixed application vector catches reordered emissions in generated JavaScript.
+[0.9 assessment](release-0.9.md)
+
+The next question is whether a real consumer needs a tighter output capacity
+than its input capacity or a relationship between emitted jobs. Use that
+workload to decide whether to add a cardinality proof or another exact
+whole-output analysis. An open result should remain visible when the
+row-local argument cannot establish the requested contract.
+
 ## Recommendation after 0.8
 
 Prioritize verified collection transformations. The webhook now accepts a nested envelope with 128 labels. Membership has a native sequence proof. Replacing that one operation with an equivalent fold left the large-capacity proof open. A consumer that needs to filter or project matching deliveries still constructs the output list in the host. The current source language can construct a fixed list literal and reduce to a state, but cannot directly return a filtered list of arbitrary admitted length. [0.8 experiment](release-0.8.md)

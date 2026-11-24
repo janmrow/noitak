@@ -1,6 +1,6 @@
 import { cardinality, domainOf, productSize, sizeLabel, exceeds } from './domain.mjs';
 import { crosscheck } from './crosscheck.mjs';
-import { execute } from './runtime.mjs';
+import { execute, invoke } from './runtime.mjs';
 import { refinement } from './refinement.mjs';
 import { solveRelation, usesSymbolic } from './symbolic.mjs';
 
@@ -21,7 +21,7 @@ function compareBodies(old, next) {
 }
 
 function compareField(old, next, field, context) {
-  const {configuration, proven, types} = context;
+  const {configuration, proven, types, collector} = context;
   const domain = productSize(domainOf(old).total, field === 'ensures' ? cardinality(old.output) : 1n);
   const symbolic = usesSymbolic(configuration, domain);
   const evidence = { method: symbolic ? 'symbolic' : 'enumerate', comparisonDomain: sizeLabel(domain),
@@ -30,17 +30,47 @@ function compareField(old, next, field, context) {
   const unresolved = reason => ({ ...evidence, status: 'undetermined', reason });
   if (!proven) return unresolved('missing-function-proof');
   if (Boolean(old.capacity) !== Boolean(next.capacity)) return unresolved('incompatible-entry-convention');
-  if (!['params', 'output', 'reads'].every(k => equal(old[k], next[k])))
+  const paramTypes = f => f.params.map(([,type]) => type);
+  if (!(collector ? equal(paramTypes(old), paramTypes(next)) : equal(old.params, next.params)) ||
+      !['output', 'reads'].every(k => equal(old[k], next[k])))
     return unresolved('incompatible-interface');
   const limit = configuration.maxCasesPerFunction;
   const enumerate = () => field === 'body' ? compareBodies(old, next) : refinement(old, next, field, limit);
   if (symbolic) {
     if (!types) return unresolved('incompatible-type-definitions');
-    const result = solveRelation(old, next, types, field);
+    const result = solveRelation(old, next, types, field, undefined,
+      {searchShortSequences: Boolean(collector && field === 'body' && domain === null)});
     return { ...evidence, ...crosscheck(result, domain, limit, enumerate, 'undetermined') };
   }
   if (exceeds(domain, limit)) return unresolved('comparison-budget');
   return { ...evidence, ...enumerate() };
+}
+
+function compareCollectors(old, next, oldFunctions, newFunctions, context) {
+  const a = {...oldFunctions.get(old.collector), reads: old.reads};
+  const b = {...newFunctions.get(next.collector), reads: next.reads};
+  const findings = [];
+  for (const [field, label] of [['ensures', 'selector-guarantee'], ['body', 'selector-contribution']]) {
+    if (equal(a[field], b[field]) && equal(a.params, b.params) && equal(a.output, b.output) &&
+        equal(a.reads, b.reads) && (field !== 'body' || equal(a.graph, b.graph))) continue;
+    const finding = compareField(a, b, field, {...context, collector: true});
+    if (field === 'body' && finding.witness) {
+      const row = finding.witness;
+      const args = [row.args];
+      const before = invoke(old, row.flags, args), after = invoke(next, row.flags, args);
+      if (before.ok && after.ok && !equal(before.value, after.value)) {
+        finding.witness = {args, flags: row.flags, before, after};
+        finding.witnessKind = 'observed-one-row-batch';
+        finding.parameters = ['items'];
+      } else {
+        delete finding.witness;
+        Object.assign(finding, {status: 'undetermined', reason: 'batch-replay-disagreement'});
+      }
+    } else if (finding.witness) finding.witnessKind = 'hypothetical-selector-result';
+    findings.push({subject: old.name, field: label, scope: 'one-row',
+      before: a[field], after: b[field], ...finding});
+  }
+  return findings;
 }
 
 export function compare(oldUnit, newUnit, before, after) {
@@ -78,6 +108,8 @@ export function compare(oldUnit, newUnit, before, after) {
         'policy-violation' : 'compatible', prior.independent, helper.independent);
   }
   const newer = new Map(newUnit.functions.filter(f => f.kind !== 'helper').map(f => [f.name, f]));
+  const oldFunctions = new Map(oldUnit.functions.map(f => [f.name, f]));
+  const newFunctions = new Map(newUnit.functions.map(f => [f.name, f]));
   const coverage = report => new Map(report.checks.filter(c => c.property === 'admissible-and-safe').map(c => [c.function, { property: c.property, status: c.status, domain: c.domain }]));
   const previous = coverage(before), current = coverage(after);
   for (const old of oldUnit.functions.filter(f => f.kind !== 'helper')) {
@@ -87,6 +119,19 @@ export function compare(oldUnit, newUnit, before, after) {
       continue;
     }
     newer.delete(old.name);
+    const entryKind = f => f.collector ? 'collector' : f.capacity ? 'reducer' : 'function';
+    if (entryKind(old) !== entryKind(next))
+      record(old.name, 'entry-kind', 'risky', entryKind(old), entryKind(next));
+    if (old.collector && next.collector) {
+      if (old.collector !== next.collector) record(old.name, 'selector', 'compatible', old.collector, next.collector);
+      const capacities = f => [f.params[0][1].capacity, f.output.capacity];
+      const a = capacities(old), b = capacities(next);
+      if (!equal(a, b))
+        record(old.name, 'collector-capacities', b.some((n, i) => n > a[i]) ? 'policy-violation' : 'risky', a, b);
+      const proven = previous.get(old.name).status === 'proven' && current.get(old.name).status === 'proven';
+      changes.push(...compareCollectors(old, next, oldFunctions, newFunctions,
+        {configuration: after.configuration, proven, types}));
+    }
     if (old.capacity !== next.capacity) {
       const expanded = old.capacity && next.capacity && next.capacity > old.capacity;
       record(old.name, 'reducer-capacity', expanded ? 'policy-violation' : 'risky',
@@ -95,6 +140,7 @@ export function compare(oldUnit, newUnit, before, after) {
     for (const field of ['params', 'output', 'requires', 'ensures', 'body', 'reads', 'independent']) {
       if (equal(old[field], next[field]) && (field !== 'body' || equal(old.graph, next.graph))) continue;
       if (['requires', 'ensures', 'body'].includes(field)) {
+        if (old.collector || next.collector) continue;
         const proven = previous.get(old.name).status === 'proven' && current.get(old.name).status === 'proven';
         const finding = compareField(old, next, field, {configuration: after.configuration, proven, types});
         if (finding.witness) finding.witnessKind = {
@@ -122,7 +168,7 @@ export function compare(oldUnit, newUnit, before, after) {
       changes.push({ subject: c.function, field, status: 'policy-violation',
         property: c.property, reason: c.reason ?? c.status, proofDomain: c.domain, proofStatus: c.status, counterexample: c.counterexample });
   }
-  return { schema: 8, toolVersion: after.toolVersion, configuration: after.configuration,
+  return { schema: 9, toolVersion: after.toolVersion, configuration: after.configuration,
     before, after,
     changes, passed: before.passed && after.passed && changes.every(c => c.status === 'compatible') };
 }

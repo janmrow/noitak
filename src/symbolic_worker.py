@@ -84,6 +84,21 @@ class Encoding:
     def variable(self, symbol, typ):
         return Term(z3.Const(symbol, self.sort(typ)))
 
+    def singleton_witness_input(self, symbol, typ):
+        """Construct a typed subset for finding witnesses, never for a proof."""
+        if isinstance(typ, dict) and "fields" in typ:
+            fields = [
+                self.singleton_witness_input(f"{symbol}_{i}", field)
+                for i, (_, field) in enumerate(typ["fields"])
+            ]
+            return (self.sort(typ).constructor(0)(*[value for value, _ in fields]),
+                    [bound for _, bounds in fields for bound in bounds])
+        if isinstance(typ, dict) and typ.get("capacity", 0) > 8:
+            value, bounds = self.singleton_witness_input(f"{symbol}_item", typ["element"])
+            return z3.Unit(value), bounds
+        value = self.variable(symbol, typ).value
+        return value, self.bounds(value, typ)
+
     def bounds(self, value, typ):
         """Guard bounds on native sequences and their active nested values."""
         if typ == "text":
@@ -355,16 +370,22 @@ class Encoding:
         raise ValueError("Unknown model value")
 
 
-def setup(request):
+def setup(request, short_sequences=False):
     f = request["function"]
     encoding = Encoding(request["types"])
     encoding.graph = f.get("graph", {})
-    env = {name: encoding.variable(f"p{i}", typ) for i, (name, typ) in enumerate(f["params"])}
+    env = {}
     flags = {name: encoding.variable(f"g{i}", "bool") for i, name in enumerate(f["reads"])}
     solver = z3.Solver()
     solver.set(timeout=request["timeoutMs"], random_seed=0)
-    for name, typ in f["params"]:
-        solver.add(*encoding.bounds(env[name].value, typ))
+    for i, (name, typ) in enumerate(f["params"]):
+        if short_sequences:
+            value, bounds = encoding.singleton_witness_input(f"p{i}", typ)
+        else:
+            value = encoding.variable(f"p{i}", typ).value
+            bounds = encoding.bounds(value, typ)
+        env[name] = Term(value)
+        solver.add(*bounds)
     return f, encoding, env, flags, solver
 
 
@@ -400,8 +421,8 @@ def verify(request):
             "witness": input_model(f, encoding, env, flags, solver.model())}
 
 
-def compare(request):
-    old, encoding, env, flags, solver = setup(request)
+def compare(request, short_sequences=False):
+    old, encoding, env, flags, solver = setup(request, short_sequences)
     new = request["candidate"]
     field = request["relation"]
 
@@ -410,23 +431,24 @@ def compare(request):
         term = encoding.expression(function[field], scope, flags)
         return z3.And(term.safe, term.value)
 
+    new_env = {name: term for (name, _), term in zip(new["params"], env.values())}
     admitted_old = holds(old, "requires", env)
-    admitted_new = holds(new, "requires", env)
+    admitted_new = holds(new, "requires", new_env)
     solver.add(admitted_old)
     if field == "requires":
         solver.add(z3.Not(admitted_new))
     elif field == "ensures":
         result = encoding.variable("hypothetical", old["output"])
         solver.add(*encoding.bounds(result.value, old["output"]))
-        scope = {**env, "result": result}
-        solver.add(admitted_new, holds(new, field, scope), z3.Not(holds(old, field, scope)))
+        solver.add(admitted_new, holds(new, field, {**new_env, "result": result}),
+                   z3.Not(holds(old, field, {**env, "result": result})))
     elif field == "body":
         # Both complete functions have already been proven safe on admitted inputs.
         encoding.graph = old.get("graph", {})
         a = encoding.expression(old[field], env, flags)
         encoding.graph = new.get("graph", {})
-        b = encoding.expression(new[field], env, flags)
-        solver.add(admitted_new, a.value != b.value)
+        b = encoding.expression(new[field], new_env, flags)
+        solver.add(admitted_new, z3.simplify(a.value != b.value) if short_sequences else a.value != b.value)
     else:
         raise ValueError("Unknown relation")
 
@@ -445,5 +467,10 @@ def compare(request):
 
 if __name__ == "__main__":
     request = json.load(sys.stdin)
-    result = compare(request) if "relation" in request else verify(request)
+    if request.get("searchShortSequences"):
+        result = compare(request, short_sequences=True)
+        if result.get("answer") != "sat":
+            result = compare(request)
+    else:
+        result = compare(request) if "relation" in request else verify(request)
     print(json.dumps({**result, "solverVersion": z3.get_version_string()}))

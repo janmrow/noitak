@@ -1,0 +1,23 @@
+(module webhook_batch 1.0.0
+  (import events 5fd139a0d16330ed36482162aa077f9dd64101a31a079aef176c7ff827b60083)
+  (sequence deliveries events.envelope 32)
+  (sequence jobs events.job 32)
+  (enum selection (skip) (emit events.job))
+
+  (helper select_job ((delivery events.envelope)) selection
+    (reads)
+    (requires true)
+    (ensures (match result
+      (skip true)
+      (emit job (and (= (get job repository) (get (get delivery repository) slug))
+        (and (not (get (get delivery repository) archived))
+          (not (= (get job branch) "")))))))
+    (match (call events.dispatch_push delivery "")
+      (ignored (tag selection skip))
+      ; Invalid business input is intentionally skipped for this batch policy.
+      (invalid (tag selection skip))
+      (queue job (tag selection emit job))))
+
+  (collect queued_jobs deliveries jobs
+    (reads)
+    (using select_job)))

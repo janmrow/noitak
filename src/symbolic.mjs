@@ -111,8 +111,8 @@ function replay(old, next, field, input) {
   }
 }
 
-export function solveRelation(old, next, types, field, spawn = spawnSync) {
-  const answer = query({ function: old, candidate: next, types, relation: field }, spawn);
+export function solveRelation(old, next, types, field, spawn = spawnSync, options = {}) {
+  const answer = query({ function: old, candidate: next, types, relation: field, ...options }, spawn);
   const {solverVersion} = answer;
   if (answer.status === 'unverified') return { status: 'undetermined', reason: answer.reason, solverVersion };
   if (answer.relation !== field) return { status: 'undetermined', reason: 'invalid-worker-response' };

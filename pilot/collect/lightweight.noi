@@ -1,0 +1,12 @@
+(module lightweight 1.0.0
+  (enum row (emit_me) (skip_me))
+  (sequence rows row 4)
+  (sequence jobs row 4)
+  (enum selection (skip) (emit row))
+  (helper select_job ((item row)) selection (reads include)
+    (requires true)
+    (ensures (match result (skip true) (emit job (= job item))))
+    (if (or (flag include) (= item (tag row emit_me)))
+      (tag selection emit item)
+      (tag selection skip)))
+  (collect queued_jobs rows jobs (reads include) (using select_job)))

@@ -38,7 +38,7 @@ The signed-order mutation test runs a separate compiler copy with one mistransla
 
 On POSIX, build and gate claim the fresh destination with an exclusive directory creation after staging all files. The destination can briefly appear empty before the complete bundle is renamed into place. A competing creator that claims the name first keeps its directory. Consume the bundle after the command exits successfully. An interruption during publication can leave an empty reservation behind. Use a fresh destination to retry.
 
-Function verification report schema 7 records source and dependency SHA-256 digests, module identity and version, tool version, proof method and configuration, per-function reads, the direct call graph and enumerated-domain cardinalities or the symbolic-text marker. Each function check identifies the obligation, source location, and outcome. Enumeration supplies examined and admitted counts. The symbolic engine records the Z3 version when available. Builds also hash the ESM and declaration bytes and publish the files together. Digests are unsigned.
+Function verification report schema 8 records source and dependency SHA-256 digests, module identity and version, tool version, proof method and configuration, per-function reads, the direct call graph and enumerated-domain cardinalities or the symbolic-text marker. Each function check identifies the obligation, source location, and outcome. Enumeration supplies examined and admitted counts. The symbolic engine records the Z3 version when available. Builds also hash the ESM and declaration bytes and publish the files together. Digests are unsigned.
 
 | Status | Meaning |
 | --- | --- |
@@ -52,7 +52,7 @@ The trusted base includes the frontend, selected proof engine, JS evaluator, art
 
 ## Comparing revisions
 
-Diff report schema 8 includes both verification reports. The selected engine also compares eligible functions. Enumeration honors the case limit. Z3 comparison uses a separate counterexample query with the same time bounds as individual proofs. Names, positional parameter types, result type, reads and public enum and record definitions are part of the comparison. It ignores locations and formatting when comparing expressions.
+Diff report schema 9 includes both verification reports. The selected engine also compares eligible functions. Enumeration honors the case limit. Z3 comparison uses a separate counterexample query with the same time bounds as individual proofs. Names, positional parameter types, result type, reads and public enum and record definitions are part of the comparison. It ignores locations and formatting when comparing expressions.
 
 For functions proven on both sides with matching signatures and reads, the following rules apply to **edited contracts**. Let A and B denote the old and candidate revisions respectively.
 
@@ -81,7 +81,7 @@ Gate publishes only if both revisions pass their own proofs and all findings are
 
 The body comparison applies to root and imported public functions, with private implementations taken from the reachable call graph. A private-only refactor may change the source digest without changing a public outcome. Adding a grant to a private helper is a policy violation, even when the caller already has it. Removing an independence guarantee from a retained helper or public entry requires review. Removed exports and changes to exposed record definitions remain risky. A fresh proof of every required check on both revisions is mandatory for publication.
 
-Consumers of schema 7 function reports should index checks by `(function, property)`. Multiple checks may describe one function, and private helper checks are included. A `passed` value covers the aggregate. CI consumers should also check the process exit status and use the new invocation's artifact digests.
+Consumers of schema 8 function reports should index checks by `(function, property)`. Multiple checks may describe one function, and private helper checks are included. A `passed` value covers the aggregate. CI consumers should also check the process exit status and use the new invocation's artifact digests.
 
 
 ## Bounded data and linked evidence
@@ -120,3 +120,49 @@ Each export reports total calls, successful returns, calls that reached a body (
 `build` and `gate` accept `--vectors FILE` in the same nonempty JSON format as `test`. Every supplied expectation must match the emitted API and the interpreter. A disagreement, unknown export or malformed vector blocks publication. The report and approved review include the exact vector file digest. A trusted caller can pin and require its own vector file in CI. The module has no switch to relax this policy. Proofs remain mandatory even when all application cases pass.
 
 Text proofs use sequences of 16-bit units with an upper bound of 1,024. Nested constraints apply to active payloads, fields and present sequence elements, including hypothetical returns. The symbolic translation, bound placement, nonoccurrence rule and both sequence representations belong to the trusted base. Replay can reject a bad model. Large-domain unsatisfiability still depends on the encoding and Z3. The artifact comparison additionally trusts the Node realm, shared boundary and equality code, and any external expected results selected by the caller.
+
+## Collector proofs
+
+The selector's explicit true admission covers every typed element and every
+assignment to its declared flags. The ordinary safety obligation proves that
+evaluation succeeds and satisfies the selector's postcondition. The checker
+resolves the frame and checks that its result is a payload-free `skip` or an
+`emit` of the output element type. The collector has all transitive reads, so
+the selector proof applies under the invocation's fixed grant snapshot.
+
+The trusted traversal rule maintains a prefix invariant. After visiting the
+first *k* rows the accumulator holds exactly their emissions, in row order,
+and has length at most *k*. The base case is the empty array. A skip leaves
+the accumulator unchanged. An emit appends one typed value satisfying the
+selector postcondition. Induction proves order, origin and the output bound.
+When the selector proof is open or violated these derived obligations stay
+open. The rule does not encode a hypothetical whole output into SMT. An
+arbitrary whole-output predicate needs an exact analysis of its own.
+
+The report names the selector proof and static premises of each derived
+property. The solver checks the element domain, including each flag
+assignment, and affordable domains retain the independent enumeration
+cross-check. Counterexamples are replayed at the row boundary. Build-time
+artifact validation separately tests that the emitted loop implements the
+specified traversal on observed inputs.
+
+A collector gate compares its entry convention, nominal input and output types,
+capacities and reads. A capacity increase or added read violates policy. The
+selector's postcondition is checked by refinement over hypothetical row
+results. When both selectors are proven, contribution comparison uses
+structural equality of `skip` or `emit(value)` under fixed grants. Equal
+contributions and the shared traversal rule imply equal ordered outputs. A
+different contribution replays as a one-row host batch on each revision.
+
+For text-containing contribution domains the worker can first search a typed
+subset with singleton native sequence fields. A model from that search must
+pass the full JS boundary and replay on both revisions. If the subset yields
+no model the full-domain query determines compatibility or leaves it open.
+
+Collector artifact evidence records successful host calls, successful
+nonempty calls, executed selector dispatches and emitted values. The worker
+measures dispatches in the emitted module with V8 precise coverage and checks
+the count against the visited rows on compared calls. Empty batches provide
+admission evidence. A collector that always skips can have nonzero dispatch
+coverage with zero emissions. Whole-array vectors can detect a change in
+order that a one-row comparison cannot exercise.

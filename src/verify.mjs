@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto';
 import { domainOf, sizeLabel, exceeds } from './domain.mjs';
-import { execute } from './runtime.mjs';
+import { execute, invoke } from './runtime.mjs';
 import { solve, symbolicConfig, usesSymbolic } from './symbolic.mjs';
 import { checkIndependence } from './independence.mjs';
 import { crosscheck, CROSSCHECK_LIMIT } from './crosscheck.mjs';
 
-export const VERSION = '0.8.0';
+export const VERSION = '0.9.0';
 export const DEFAULT_LIMIT = 65536;
 export const hash = data => createHash('sha256').update(data).digest('hex');
 
@@ -27,6 +27,34 @@ function obligation(f, limit) {
     { ...result, status: 'violated', reason: 'empty-admission-domain' };
 }
 
+function collectorObligations(f, selectorSafety) {
+  const identity = {function: f.name, visibility: f.kind === 'imported' ? 'imported' : 'public', loc: f.loc};
+  const admitted = {...identity, property: 'collector-row-admission', method: 'literal-true-admission',
+    selector: f.collector, status: 'proven'};
+  const proven = selectorSafety.status === 'proven';
+  const row = proven ? selectorSafety.admissionWitness : selectorSafety.counterexample;
+  const batch = row && {args: [row.args],
+    flags: Object.fromEntries(f.reads.map(key => [key, Object.hasOwn(row.flags, key) ? row.flags[key] : false]))};
+  const derived = (property, premises) => ({...identity, property, method: 'induction-on-length',
+    selector: f.collector, premises: [
+      {function: f.collector, property: 'admissible-and-safe'},
+      {function: f.name, property: admitted.property},
+      ...premises
+    ], status: proven ? 'proven' : 'unverified',
+    ...(!proven && {reason: 'missing-selector-proof'})});
+  return [
+    admitted,
+    {...derived('admissible-and-safe', [{method: 'static', property: 'declared-transitive-reads'}]),
+      scope: 'ordered-collection', domain: selectorSafety.domain,
+      ...(proven && {admissionWitness: batch}),
+      ...(!proven && batch && {counterexample: {...batch, outcome: invoke(f, batch.flags, batch.args)}})},
+    derived('ordered-emissions', [{method: 'static', property: 'typed-skip-or-emit'}]),
+    derived('emitted-element-guarantee', [{method: 'static', property: 'typed-skip-or-emit'}]),
+    {...derived('output-bound', [{method: 'static', property: 'output-capacity-covers-input'}]),
+      inputCapacity: f.params[0][1].capacity, outputCapacity: f.output.capacity}
+  ];
+}
+
 export function verify(unit, source, limit, engine = 'enumerate') {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000000)
     throw new Error('Case limit must be an integer from 1 to 1000000');
@@ -40,7 +68,9 @@ export function verify(unit, source, limit, engine = 'enumerate') {
     configuration.method = 'domain-directed-v1';
   }
   const types = unit.types;
+  const safetyByName = new Map();
   const checks = unit.functions.flatMap(f => {
+    if (f.collector) return collectorObligations(f, safetyByName.get(f.collector));
     const domain = domainOf(f).total;
     const symbolic = usesSymbolic(configuration, domain);
     const audit = (answer, enumerate) => crosscheck(answer, domain, limit, enumerate, 'unverified');
@@ -49,6 +79,7 @@ export function verify(unit, source, limit, engine = 'enumerate') {
     const finiteSafety = () => obligation(f, limit);
     const safety = symbolic ? audit(solve(f, types), finiteSafety) : finiteSafety();
     const results = [{ ...identity, property: 'admissible-and-safe', ...safety }];
+    safetyByName.set(f.name, results[0]);
     if (f.capacity) {
       results[0].scope = 'one-transition';
       // Base case checks the initial invariant even on empty input. The compiled
@@ -72,7 +103,7 @@ export function verify(unit, source, limit, engine = 'enumerate') {
     }
     return results;
   });
-  return { schema: 7, toolVersion: VERSION, module: unit.name, version: unit.version,
+  return { schema: 8, toolVersion: VERSION, module: unit.name, version: unit.version,
     sourceSha256: hash(source), dependencies: unit.dependencies ?? {}, configuration,
     calls: Object.fromEntries(unit.functions.map(f => [f.name, f.calls])),
     permissions: Object.fromEntries(unit.functions.map(f => [f.name, f.reads])),

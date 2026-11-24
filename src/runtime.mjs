@@ -104,6 +104,17 @@ function execute(f, args, flags) {
 }
 
 function runValidated(f, values, snapshot) {
+  if (f.collector) {
+    const [names, requires, body, ensures] = f.graph[f.collector];
+    const selector = {params: names.map(name => [name]), requires, body, ensures, graph: f.graph};
+    const output = [];
+    for (const row of values[0]) {
+      const contribution = execute(selector, [row], snapshot);
+      if (!contribution.ok) return contribution;
+      if (contribution.value.tag === 'emit') output.push(contribution.value.value);
+    }
+    return {ok: true, value: output};
+  }
   let outcome;
   if (f.capacity) {
     let state = values[0];
