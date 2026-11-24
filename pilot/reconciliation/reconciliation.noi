@@ -1,0 +1,25 @@
+(module reconciliation 1.0.0
+  (record ledger (balance i32) (held bool))
+  (sequence adjustments i32 8)
+
+  (reducer post_adjustments ((state ledger) (delta i32)) ledger
+    (reads)
+    (capacity 256)
+    (invariant (and (<= -1000000i32 (get state balance))
+                    (<= (get state balance) 1000000i32)))
+    (ensures (if (get state held) (= result state)
+      (if (get result held) (= (get result balance) (get state balance))
+        (= (get result balance) (+ (get state balance) delta)))))
+    (if (get state held) state
+      (let balance (get state balance)
+        (if (or (< delta (- -1000000i32 balance))
+                (< (- 1000000i32 balance) delta))
+          (make ledger (balance balance) (held true))
+          (make ledger (balance (+ balance delta)) (held false))))))
+
+  (fn reconcile ((opening i32) (deltas adjustments)) ledger
+    (reads)
+    (requires (and (<= -1000000i32 opening) (<= opening 1000000i32)))
+    (ensures (and (<= -1000000i32 (get result balance))
+                  (<= (get result balance) 1000000i32)))
+    (reduce post_adjustments (make ledger (balance opening) (held false)) deltas)))

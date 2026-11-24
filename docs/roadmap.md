@@ -10,11 +10,15 @@ expansion. Extend induction where a workload needs other state invariants or
 summary guarantees for whole iterations. Keep exact comparison or an
 explicit unknown for inadequately summarized behavior.
 
-Use substantially larger bounded data transformations and signed
-reconciliation as acceptance workloads. Measure verification as sequence
-capacity grows and observe whether unchanged callers can safely reuse proofs
-after a callee implementation change that preserves its contracts. Evaluate
-immutable sequence builders under the runtime’s alias and work rules.
+Use [signed ledger reconciliation](../pilot/reconciliation/README.md) as the
+next induction workload. Its reducer proves a signed running balance bound.
+The composed function's exact proof times out at 128 adjustments. The next
+target is to reuse the invariant to establish its result bound within the
+solver budget. Measure verification as sequence capacity grows and observe
+whether unchanged callers can safely reuse proofs after a callee
+implementation change that preserves its contracts. Evaluate immutable
+sequence builders under the runtime’s alias and work rules on larger
+bounded transformations.
 
 Extend lookup reasoning to prove which request keys and dispatch decisions
 depend on designated confidential inputs. Keeping the planner pure creates

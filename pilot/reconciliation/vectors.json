@@ -1,0 +1,14 @@
+[
+  {"fn":"reconcile","flags":{},"args":[-10,[]],"expected":{"ok":true,"value":{"balance":-10,"held":false}}},
+  {"fn":"reconcile","flags":{},"args":[0,[5,-12,15,-8,100,-100,1,-1]],"expected":{"ok":true,"value":{"balance":0,"held":false}}},
+  {"fn":"reconcile","flags":{},"args":[0,[1000000]],"expected":{"ok":true,"value":{"balance":1000000,"held":false}}},
+  {"fn":"reconcile","flags":{},"args":[0,[-1000000]],"expected":{"ok":true,"value":{"balance":-1000000,"held":false}}},
+  {"fn":"reconcile","flags":{},"args":[0,[1000000,1,-1]],"expected":{"ok":true,"value":{"balance":1000000,"held":true}}},
+  {"fn":"reconcile","flags":{},"args":[0,[1000000,-1,1]],"expected":{"ok":true,"value":{"balance":1000000,"held":false}}},
+  {"fn":"reconcile","flags":{},"args":[0,[-1000000,-1,1]],"expected":{"ok":true,"value":{"balance":-1000000,"held":true}}},
+  {"fn":"reconcile","flags":{},"args":[40,[2147483647,-2147483647]],"expected":{"ok":true,"value":{"balance":40,"held":true}}},
+  {"fn":"reconcile","flags":{},"args":[-40,[-2147483648,2147483647,1]],"expected":{"ok":true,"value":{"balance":-40,"held":true}}},
+  {"fn":"reconcile","flags":{},"args":[1000001,[]],"expected":{"ok":false,"code":"PRECONDITION","phase":"requires"}},
+  {"fn":"reconcile","flags":{},"args":[0,[1000001,2147483648]],"expected":{"ok":false,"code":"ARGUMENT","phase":"boundary"}},
+  {"fn":"reconcile","flags":{},"args":[0,[0,0,0,0,0,0,0,0,0]],"expected":{"ok":false,"code":"ARGUMENT","phase":"boundary"}}
+]
