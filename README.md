@@ -2,7 +2,7 @@
 
 Noitak aims to become a practical programming language for software built primarily by AI agents, where safety, verifiable guarantees, and change control are first-class parts of programming. It compiles contracted computations and capability-scoped lookup services to standalone JavaScript with TypeScript declarations. [Project philosophy](docs/philosophy.md)
 
-Ordinary functions can build typed intermediate sequences, fold them into records, and call verified reducer steps through a bounded reduction. A shipment assessment filters calibrated signed readings, retains ordered excursions, and makes a quarantine decision. An inventory service plans an authorized stock lookup and handles its typed reply. The change gate can use a reviewer-supplied authorization for a specific behavioral change. [Engineering assessment](docs/release-0.10.md)
+Ordinary functions can build typed intermediate sequences, fold them into records, and call verified reducer steps through a bounded reduction. A shipment assessment filters calibrated signed readings, retains ordered excursions, and makes a quarantine decision. An inventory service plans an authorized stock lookup and handles its typed reply. A reviewer can authorize return differences for named functions in an exact revision. [Engineering assessment](docs/release-0.10.md)
 
 With Node 22, TypeScript and the pinned Python environment installed, run the two evaluations from the checkout. Each command creates a fresh output directory.
 

@@ -185,10 +185,29 @@ failure under that approximation triggers exact verification. Admission is
 established separately and replayed through concrete execution. Failures in
 verification or replay leave the obligation open. Source typing, runtime
 enforcement, source proofs and tests of generated code remain distinct
-evidence. For a direct reducer entry, termination follows the input bound
-and finite acyclic step structure. Its inductive preservation proof is a
-separate obligation. Composed reductions currently expand at their checked
-sequence capacity, and proof cost may grow even when execution is bounded.
+evidence. Explicit symbolic mode also uses proved callee contracts for a
+finite-domain caller of a function proved by sequence-length induction.
+
+### Sequence-length induction
+
+For a function that directly returns a sequence fold over one of its
+parameters, the solver can try an invariant when both sequence capacities
+exceed eight. After `i` rows, the accumulator is a typed sequence of length
+at most `i`. The initialization query checks safe admission and an empty,
+typed initial accumulator on admitted calls. The preservation query checks
+safe execution and the updated bound at `i + 1` for any typed row and
+accumulator satisfying the invariant at a valid index. The exit query checks
+the declared postcondition for every typed accumulator satisfying the bound
+at the full input length. Each query must be unsatisfiable. The report
+records the three answers under `induction` and retains a replayed admission
+witness. A possible failure of the inferred invariant falls back to the
+ordinary unrolled proof. Solver uncertainty leaves the obligation open.
+
+The rule proves safety and the declared postcondition. It supplies a bound
+on the number of output elements. Claims about exact output contents still
+use the implementation in body comparison and relational independence.
+Other fold shapes use bounded expansion. The checked sequence capacity and
+static work limit govern execution in all cases.
 
 ## Authorizing an intentional change
 

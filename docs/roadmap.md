@@ -2,16 +2,13 @@
 
 ## Next milestone after 0.10
 
-Prioritize inductive verification of composed iteration and an observation
-model for effectful services. A shipment proof works at a capacity of three.
-The solver still expands each fold at its declared capacity. A root reducer
-can handle thousands of rows with one transition proof, but that same
-transition in an ordinary compositional pipeline currently incurs the fold
-cost. Introduce local state invariants and explicit summary guarantees for
-whole iterations. Check initialization, preservation, exit and resource
-bounds independently. Reuse established step premises across modules while
-keeping exact comparison or an explicit unknown for inadequately summarized
-behavior.
+Sequence-length induction now proves the composed shipment at capacities of
+32 and 64. The selector proves initialization, preservation and exit for a
+bound on its accumulator length. Its caller uses the proved selector
+contract. Exact body comparison and other fold shapes still use bounded
+expansion. Extend induction where a workload needs other state invariants or
+summary guarantees for whole iterations. Keep exact comparison or an
+explicit unknown for inadequately summarized behavior.
 
 Use substantially larger bounded data transformations and signed
 reconciliation as acceptance workloads. Measure verification as sequence

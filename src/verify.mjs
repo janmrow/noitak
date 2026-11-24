@@ -118,7 +118,8 @@ function verifyRevision(unit, source, limit, engine, table) {
     // call over text can introduce quantified bounds on new sequence terms,
     // even where the implementation has a decidable concrete reduction.
     let contracts;
-    if (symbolic && engine === 'auto' && domain !== null && f.calls.length &&
+    const useContracts = engine === 'auto' || f.calls.some(name => safetyByName.get(name)?.induction);
+    if (symbolic && useContracts && domain !== null && f.calls.length &&
         f.calls.every(name => safetyByName.get(name)?.status === 'proven')) {
       contracts = Object.fromEntries(f.calls.map(name => {
         const {params, output, requires, ensures} = byName.get(name);

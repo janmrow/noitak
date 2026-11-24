@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { compile } from '../../src/frontend.mjs';
+import { compare } from '../../src/diff.mjs';
 import { verify } from '../../src/verify.mjs';
 
 function check(source, name) {
@@ -65,6 +66,67 @@ test('public build validates a length-only artifact at the maximum i32 sequence 
     assert.deepEqual(api.size({}, rows), {ok:true, value:length});
   }
   assert.deepEqual(api.size({}, Array(16384).fill(0)), {ok:false, code:'ARGUMENT', phase:'boundary'});
+});
+
+test('composed shipment proves its guarantees at 32 and builds at 64 rows', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'noitak-shipment-induction-'));
+  t.after(() => rm(dir, {recursive:true, force:true}));
+  const input = join(dir, 'shipment.noi'), out = join(dir, 'artifact');
+  const source = await readFile('pilot/coldchain/shipment.noi', 'utf8');
+  await copyFile('pilot/coldchain/limits.noi', join(dir, 'limits.noi'));
+  for (const [capacity, engine, command] of [[32,'symbolic','verify'], [64,'auto','build']]) {
+    await writeFile(input, source.replace('(sequence samples sample 3)', `(sequence samples sample ${capacity})`)
+      .replace('(sequence temperatures i32 3)', `(sequence temperatures i32 ${capacity})`));
+    const args = command === 'build' ? [input,out] : [input];
+    const run = spawnSync(process.execPath, ['noitak.mjs', command, ...args, '--engine', engine, '--json'], {encoding:'utf8'});
+    assert.equal(run.status, 0, run.error?.message ?? run.stderr + run.stdout);
+    const report = JSON.parse(run.stdout);
+    const selector = report.checks.find(c => c.function === 'select');
+    const assessment = report.checks.filter(c => c.function === 'assess');
+    assert.ok(report.passed && report.checks.every(c => c.status === 'proven'));
+    assert.equal(selector.method, 'sequence-length-induction');
+    assert.deepEqual(selector.induction, {initialization:'unsat',preservation:'unsat',exit:'unsat'});
+    assert.equal(assessment[0].method, 'callee-contracts');
+    assert.deepEqual(assessment[0].premises, ['select']);
+    assert.equal(assessment[1].method, 'parameter-nonoccurrence');
+    if (command === 'build') assert.equal(report.artifactValidation.status, 'tested');
+  }
+  const {api} = await import(pathToFileURL(join(out, 'module.mjs')));
+  const readings = [2,9,-137,8,-2147483648,9];
+  const rows = Array.from({length:65}, (_, i) => ({celsius:readings[i % readings.length],calibrated:i % 5 !== 0}));
+  for (const length of [0,1,17,32,63,64]) {
+    const input = rows.slice(0,length);
+    const excursions = input.filter(row => row.calibrated && (row.celsius < 2 || row.celsius > 8)).map(row => row.celsius);
+    for (const note of [false,true])
+      assert.deepEqual(api.assess({},input,note), {ok:true,value:{excursions,quarantine:excursions.length >= 2}});
+  }
+  assert.deepEqual(api.assess({},rows,false), {ok:false,code:'ARGUMENT',phase:'boundary'});
+});
+
+test('fold induction rejects failed premises and body comparison still checks sequence contents', () => {
+  const source = `(module m 1.0.0 (sequence xs bool 9)
+    (fn pick ((rows xs)) xs (reads) (requires true) (ensures (<= (length result) (length rows)))
+      (fold rows (items xs) (out x i) (if x (append out x) out))))`;
+  const good = check(source, 'pick');
+  assert.equal(good.method, 'sequence-length-induction');
+  for (const bad of [
+    source.replace('(items xs)', '(items xs false)'),
+    source.replace('(if x (append out x) out)', '(if (= i 0) (append (append out x) x) out)'),
+    source.replace('(<= (length result)', '(= (length result)')
+  ]) {
+    const failed = check(bad, 'pick');
+    assert.equal(failed.status, 'violated', JSON.stringify(failed));
+    assert.equal(failed.counterexample.outcome.code, 'POSTCONDITION');
+  }
+  const edited = source.replace('(append out x)', '(append out false)');
+  const old = compile(source), next = compile(edited);
+  const report = compare(old, next, verify(old,source,4096,'symbolic'), verify(next,edited,4096,'symbolic'));
+  const [body] = report.changes;
+  assert.equal(report.passed, false);
+  assert.equal(body.field, 'body');
+  assert.equal(body.status, 'risky');
+  assert.ok(body.witness.before.value.includes(true));
+  assert.ok(body.witness.after.value.every(value => value === false));
 });
 
 test('named reduction checks its invariant even on the empty sequence', () => {

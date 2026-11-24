@@ -443,32 +443,86 @@ def input_model(f, encoding, env, flags, model):
             "flags": {k: decode(term, "bool") for k, term in flags.items()}}
 
 
+def prove_sequence_fold(f, encoding, env, flags, solver, pre):
+    """Try len(accumulator) <= rows processed for a returned sequence fold."""
+    body, output = f["body"], f["output"]
+    if not isinstance(body, list) or body[0] != "fold" or not isinstance(output, dict):
+        return None
+    rows, initial, names, step, capacity = body[1:6]
+    if capacity <= 8 or output.get("capacity", 0) <= 8 or not isinstance(rows, str):
+        return None
+    row_type = dict(f["params"])[rows]["element"]
+    total = z3.Length(env[rows].value)
+    admitted = z3.And(pre.safe, pre.value)
+
+    def counterexample(*conditions):
+        solver.push()
+        solver.add(*encoding.assumptions, *conditions)
+        encoding.assumptions.clear()
+        result = solver.check()
+        if result != z3.unknown:
+            solver.pop()
+        return result
+
+    start = encoding.expression(initial, env, flags)
+    initialized = z3.And(start.safe, z3.Length(start.value) == 0,
+                         *encoding.bounds(start.value, output))
+    base = counterexample(z3.Or(z3.Not(pre.safe), z3.And(pre.value, z3.Not(initialized))))
+    if base != z3.unsat:
+        return base
+
+    acc = z3.FreshConst(encoding.sort(output))
+    row = z3.FreshConst(encoding.sort(row_type))
+    index = z3.FreshInt()
+    width = body[6] if len(body) > 6 else 8
+    scope = {**env, names[0]: Term(acc), names[1]: Term(row), names[2]: Term(z3.Int2BV(index, width))}
+    update = encoding.expression(step, scope, flags)
+    preserved = z3.And(update.safe, z3.Length(update.value) <= index + 1,
+                       *encoding.bounds(update.value, output))
+    # An arbitrary typed row overapproximates the row at this valid index.
+    transition = counterexample(admitted, index >= 0, index < total, z3.Length(acc) <= index,
+                                *encoding.bounds(acc, output), *encoding.bounds(row, row_type), z3.Not(preserved))
+    if transition != z3.unsat:
+        return transition
+
+    post = encoding.expression(f["ensures"], {**env, "result": Term(acc)}, flags)
+    return counterexample(admitted, z3.Length(acc) <= total, *encoding.bounds(acc, output),
+                          z3.Not(z3.And(post.safe, post.value)))
+
+
 def verify(request):
     f, encoding, env, flags, solver = setup(request)
     encoding.contracts = request.get("contracts", {})
     pre = encoding.expression(f["requires"], env, flags)
-    body = encoding.expression(f["body"], env, flags)
-    post = encoding.expression(f["ensures"], {**env, "result": Term(body.value)}, flags)
-    solver.push()
-    solver.add(*encoding.assumptions)
-    solver.add(z3.Or(z3.Not(pre.safe), z3.And(pre.value,
-                  z3.Not(z3.And(body.safe, post.safe, post.value)))))
-    check = solver.check()
-    if check == z3.unknown:
+    induction = prove_sequence_fold(f, encoding, env, flags, solver, pre)
+    if induction == z3.unknown:
         return {"status": "unverified", "reason": solver.reason_unknown()}
-    if check == z3.sat:
-        if encoding.contracts:
-            return {"status": "needs-implementation"}
-        return {"status": "violated", "input": input_model(f, encoding, env, flags, solver.model())}
-    solver.pop()
+    if induction != z3.unsat:
+        body = encoding.expression(f["body"], env, flags)
+        post = encoding.expression(f["ensures"], {**env, "result": Term(body.value)}, flags)
+        solver.push()
+        solver.add(*encoding.assumptions)
+        solver.add(z3.Or(z3.Not(pre.safe), z3.And(pre.value,
+                      z3.Not(z3.And(body.safe, post.safe, post.value)))))
+        check = solver.check()
+        if check == z3.unknown:
+            return {"status": "unverified", "reason": solver.reason_unknown()}
+        if check == z3.sat:
+            if encoding.contracts:
+                return {"status": "needs-implementation"}
+            return {"status": "violated", "input": input_model(f, encoding, env, flags, solver.model())}
+        solver.pop()
     solver.add(pre.safe, pre.value)
     admitted = solver.check()
     if admitted == z3.unknown:
         return {"status": "unverified", "reason": solver.reason_unknown()}
     if admitted == z3.unsat:
         return {"status": "violated", "reason": "empty-admission-domain", "safety": "unsat", "admission": "unsat"}
-    return {"status": "proven", "safety": "unsat", "admission": "sat",
-            "witness": input_model(f, encoding, env, flags, solver.model())}
+    result = {"status": "proven", "safety": "unsat", "admission": "sat",
+              "witness": input_model(f, encoding, env, flags, solver.model())}
+    if induction == z3.unsat:
+        result["induction"] = {"initialization": "unsat", "preservation": "unsat", "exit": "unsat"}
+    return result
 
 
 def compare(request, short_sequences=False):

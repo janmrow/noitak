@@ -5,7 +5,7 @@ A function can build an intermediate collection, pass it to a private
 helper or a reducer, and state a contract over the complete returned value.
 It can use that computation as a stage of a capability-scoped host service.
 The change gate retains exact semantic comparison and can record independent
-authorization for specific witnessed behavior changes.
+authorization for return differences in named functions in an exact revision.
 
 The baseline is v0.9.0 at `7b9401829f0ee63c92d354ce86dbba18f305a299`.
 It already supported pinned sibling modules, tagged and structured types,
@@ -23,10 +23,10 @@ Read flags came from a snapshot supplied by the host.
 | --- | --- |
 | Compose bounded computations | Keep immutable acyclic expressions and add checked append and reducer composition. A named reduction lowers to a guarded typed fold. A record or tagged accumulator can retain several values, collections or a business rejection. Existing reducer and collector entries retain their independent induction rules. General loops could enable more programs but would require a termination policy and new obligations for arbitrary state. |
 | Grow practical domains | Add signed i32 using checked arithmetic and signed symbolic bitvectors. Make u32 indexing opt-in per sequence type. Array bounds, type layouts, conservative expression work and solver budgets apply independently. Native sequence terms avoid enormous sum types. Append copies its prefix, and repeated append can take quadratic work. |
-| Verify with proved premises | Auto mode uses proven contracts to abstract eligible calls on large finite domains. It retries a potential abstract counterexample with exact terms. It leaves timeouts and unknowns open. It uses exact terms for text input domains because abstract bounds made a legacy text query inconclusive. Explicit symbolic mode uses exact implementation terms. |
+| Verify with proved premises | Auto mode uses proven contracts to abstract eligible calls on large finite domains. It retries a potential abstract counterexample with exact terms. It leaves timeouts and unknowns open. It uses exact terms for text input domains. Explicit symbolic mode can use proved contracts in finite-domain callers of a sequence fold proved by induction. |
 | Reuse evidence locally | Diff and gate share an invocation-private table of successful function obligations. Keys include the checked definition, dependency keys, graph pins, type layouts, tool version and proof configuration. Evidence lists stable obligation identifiers and dependency digests. Import pin changes conservatively invalidate the invocation’s reuse. No serialized proof inputs are accepted. |
 | Mediate one real host read | A checked planner computes the key. A host-minted opaque token carries an exact resource and key set. The runtime validates authorization, input and reply, invokes a synchronous handler once, and passes the reply to a verified continuation. A thrown handler becomes a tagged unavailable reply. Modeling the operation at a service boundary keeps host behavior out of pure proof assumptions. |
-| Independently authorize evolution | The protected caller supplies a policy scoped to source digests, pins, compiler version and configuration. It can accept exactly the named witnessed return differences. Changed requests, lost guarantees, added authority and unresolved proofs block publication. The receipt retains the actual change witness and policy digest. |
+| Independently authorize evolution | The protected caller supplies a policy scoped to source digests, pins, compiler version and configuration. Each named function must have a witnessed difference, and approval covers all its return differences on jointly admitted inputs. Changed requests, lost guarantees, added authority and unresolved proofs block publication. The receipt retains the witness and policy digest and states the scope. |
 
 Source typing checks nominal values and transitive flag requirements. Runtime
 checks enforce arithmetic bounds, shape and capacity, contract admission,
@@ -69,8 +69,9 @@ proofs do not establish backend equivalence. [Verification](verification.md)
   responses, and computes whether to order or report an invalid balance.
   The independent numerical oracle matched 150 stock allocations plus
   three admission, scope and missing-data cases. Artifact validation
-  exercises seven handler scenarios per service. A mutation that bypassed
-  the key check failed artifact validation. [Inventory source](../pilot/inventory/inventory.noi)
+  exercises eight handler scenarios per service, including denial without
+  dispatch for a populated scope with the wrong key. The inventory pilot
+  requires TypeScript to reject an async handler. [Inventory source](../pilot/inventory/inventory.noi)
 
 Both generated APIs are consumed with `tsc --strict --module nodenext`.
 The packaged CLI builds the same services from the installed tarball with
@@ -91,18 +92,20 @@ conducted.
 | Change | Noitak | TypeScript |
 | --- | --- | --- |
 | Equivalent threshold rewrite | Compatible | Accepted |
-| Quarantine on first excursion | Strict review blocks. Exact authorization accepts | Accepted with updated requirements |
+| Quarantine on first excursion | Strict review matches the intended reference. Exact authorization accepts | Accepted with updated requirements |
 | Off-by-one threshold | Return difference | Tests reject |
 | Ignore sample calibration | Return difference | Tests reject |
 | Private note controls quarantine | Independence proof violated | Tests reject |
 | Drop a rare but valid signed reading | Return difference | Escapes acceptance tests. An independent holdout confirms the defect |
+| Quarantine on first excursion and drop the rare reading | Strict review against the intended reference blocks. Whole-function approval alone accepts | Escapes acceptance tests. The holdout confirms the defect |
 | Weaken complete result guarantee | Contract refinement fails | — |
 | Require extra authority | Authority policy blocks | — |
 | Stale dependency pin | Source loader rejects | — |
 
 Of the common tasks, Noitak accepted both valid changes and rejected four of
-four defects. TypeScript accepted both valid changes and rejected three of
-four defects. All three additional Noitak policy mutations were refused.
+five defects using the strict reference check for the combined edit.
+TypeScript accepted both valid changes and rejected three of five defects.
+All three additional Noitak policy mutations were refused.
 The exact body checks returned replayable witnesses. The release benchmark
 had no open required source obligations for loadable candidates. The reuse
 table skipped two of three verification groups for threshold-only edits.
@@ -111,7 +114,7 @@ while retaining the imported temperature-policy proof. The unit suite
 tests invalidation on pin and configuration changes and refusal to reuse
 failed obligations.
 
-A local Node 22.23.1 and Z3 4.13.4 run verified the shipment in 283 ms and
+A local Node 22.23.1 and Z3 4.13.4 run at `52824b0` verified the shipment in 283 ms and
 built it in 328 ms. Gate times for loadable candidates ranged from 373 to
 579 ms, excluding the preliminary authorization diff. The combined strict
 TypeScript compilation took 843 ms. The TypeScript acceptance checks took
@@ -122,16 +125,18 @@ single-machine benchmark includes Noitak’s executable contracts and boundary
 copies and does not attribute cost to individual checks. Each run writes
 fresh timings and machine-readable decisions under its destination.
 
-A capacity experiment changed both shipment sequence capacities together.
+A capacity experiment on `52824b0` changed both shipment sequence capacities together.
 The same source-level checks proved at capacities 3, 4, 8 and 16 in
 0.30, 0.32, 0.59 and 1.30 seconds respectively. At 32 the run took 6.41
 seconds and left three obligations open after solver cancellation. The
 static work estimate grew from 137 at capacity 3 to 2,051 at 32. This
 program remains much smaller than the largest accepted input type.
-Wide sequence tests separately exercise concrete positions across 255 and
-up to 512. Host reducer proofs still quantify one transition independently
-of batch length. The measured 32-row ordinary fold is the clearest limit
-on the next scale increase.
+Sequence-length induction now proves the shipped selector’s length bound
+at 32 and 64 rows. The composed `assess` function proves its contract with
+the selector’s guarantee and proves independence by parameter
+nonoccurrence. The 64-row public build is checked against an independent
+ordered selection oracle. A separate length-only program verifies and builds
+at capacity 16,383 with typed samples across the 255/256 boundary.
 
 ## Reproduce the release checks
 
@@ -162,14 +167,14 @@ malformed evidence, timeouts, missing admitted execution, boundary faults
 and contradictory solver replies. The release check exercises a fresh
 offline tarball install and validated artifacts from both new pilots.
 
-The local release run passed 143 default and 54 symbolic tests, the demo,
+The local run at `52824b0` passed 143 default and 54 symbolic tests, the demo,
 all six pilots, the change benchmark and the installed-package check.
-To reproduce the capacity measurements with the same engine and budgets:
+To exercise the capacity cases with the current verifier:
 
 ```sh
 scale=$(mktemp -d)
 cp pilot/coldchain/limits.noi "$scale"
-for capacity in 3 4 8 16 32; do
+for capacity in 3 4 8 16 32 64; do
   sed -e "s/samples sample 3/samples sample $capacity/" \
       -e "s/temperatures i32 3/temperatures i32 $capacity/" \
       pilot/coldchain/shipment.noi > "$scale/shipment-$capacity.noi"
@@ -191,8 +196,8 @@ without a solver. Use `--engine auto` for large-domain builds. The gate also
 checks refinement of retained private helper contracts and blocks removal
 of helpers with nontrivial clauses or independence obligations.
 
-The next milestone should bring inductive invariants to composed folds and
-extend proofs to lookup traces. Current programs remain bounded, synchronous
+The roadmap extends inductive verification to more fold shapes and considers
+proofs of lookup traces. Current programs remain bounded, synchronous
 and acyclic, with no general heap, recursion, external writes or concurrency.
 Proof reuse stops at the invocation boundary. Formal verification of the
 compiler and hosted CI results are outside the local evidence. [Roadmap](roadmap.md)

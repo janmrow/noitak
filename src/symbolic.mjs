@@ -4,7 +4,7 @@ import { argument, invoke, predicate } from './runtime.mjs';
 
 import { exceeds } from './domain.mjs';
 
-export const symbolicConfig = { method: 'z3-datatypes-sequences-v5', timeoutMsPerQuery: 3000, timeoutMsPerWorker: 10000 };
+export const symbolicConfig = { method: 'z3-datatypes-sequences-v6', timeoutMsPerQuery: 3000, timeoutMsPerWorker: 10000 };
 export function usesSymbolic(configuration, domain) {
   return configuration.engine === 'symbolic' ||
     (configuration.engine === 'auto' && exceeds(domain, configuration.maxCasesPerFunction));
@@ -52,12 +52,16 @@ export function solve(f, types, spawn = spawnSync, contracts) {
     return {...exact, abstraction: 'insufficient-callee-contracts'};
   }
   if (answer.status === 'unverified') return answer;
-  const { solverVersion } = answer;
-  if (answer.status === 'proven' && hasFields(answer, 'status', 'solverVersion', 'safety', 'admission', 'witness') && validModel(answer.witness) &&
+  const { solverVersion, induction } = answer;
+  const phases = ['initialization', 'preservation', 'exit'];
+  const induced = hasFields(induction, ...phases) && phases.every(phase => induction[phase] === 'unsat');
+  if (answer.status === 'proven' && hasFields(answer, 'status', 'solverVersion', 'safety', 'admission', 'witness',
+      ...(induced ? ['induction'] : [])) && validModel(answer.witness) &&
       answer.safety === 'unsat' && answer.admission === 'sat') {
     const model = typedInput(f, answer.witness);
     if (!model || !invokeTransition(f, model.flags, model.args).ok) return unknown('admission-replay-disagreement');
-    return { status: 'proven', ...(contracts && {method: 'callee-contracts', premises: Object.keys(contracts)}), solverVersion, safety: 'unsat', admission: 'sat',
+    return { status: 'proven', ...(contracts && {method: 'callee-contracts', premises: Object.keys(contracts)}),
+      ...(induced && {method: 'sequence-length-induction', induction}), solverVersion, safety: 'unsat', admission: 'sat',
       admissionWitness: {args:model.args, flags:model.flags} };
   }
   if (answer.status === 'violated') {

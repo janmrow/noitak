@@ -32,7 +32,7 @@ Either proof engine can establish the transition obligation. The verifier record
 
 The wide integer model uses 32-bit bitvectors and explicit overflow predicates. Signed comparison follows two’s-complement order and signed arithmetic checks a sign-extended intermediate. JavaScript addition and subtraction of two u32 operands have exactly representable intermediate results. UUIDs map bijectively between canonical text and 128-bit bitvectors. Auto mode selects Z3 for domains containing text. Other domains use exact BigInt sizes, including hypothetical results in guarantee comparisons.
 
-The worker represents text as a native sequence of 16-bit bitvectors. Larger collections use native sequences of the element sort, with type-specific length constraints on inputs and hypothetical results. Only active fields require bounds. For larger collections of bounded values the encoding quantifies over occupied indices. Capacities up to eight retain the tested datatype lowering. Native membership uses containment of a singleton. Folds expand the step up to its capacity and can exhaust the query budget. Separate nominal types may share an SMT sequence sort. The frontend preserves nominality, and the worker applies bounds from each declared type.
+The worker represents text as a native sequence of 16-bit bitvectors. Larger collections use native sequences of the element sort, with type-specific length constraints on inputs and hypothetical results. Only active fields require bounds. For larger collections of bounded values the encoding quantifies over occupied indices. Capacities up to eight retain the tested datatype lowering. Native membership uses containment of a singleton. Direct sequence-returning folds can prove safety with a length invariant. General fold queries expand the step up to its capacity and can exhaust the query budget. Separate nominal types may share an SMT sequence sort. The frontend preserves nominality, and the worker applies bounds from each declared type.
 
 Artifact validation executes a typed admission model as well as generic probes. Optional external vectors supply expected host outcomes, and the manifest binds their bytes by SHA-256. The interpreter and generated ESM share boundary primitives and run in Node. The independent policy implementation and hand-specified cases exercise those shared assumptions through the public interface.
 
@@ -46,7 +46,8 @@ The gate compares resolved selectors in their separate graphs and replays a diff
 
 ## Contract abstraction and effect boundaries
 
-For large finite domains in auto mode, an ordinary safety query can use a proved
+For large finite domains in auto mode and finite-domain symbolic callers of an
+inductively proved sequence fold, an ordinary safety query can use a proved
 callee’s precondition and a fresh result restricted by its postcondition and
 type bounds. Each call can choose a different allowed result even with equal
 arguments. This overapproximates deterministic execution. Preconditions and
