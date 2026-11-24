@@ -41,7 +41,8 @@ export function formatReview(report) {
         `The domain contains ${c.proofDomain} cases. The configured limit is ${report.configuration.maxCasesPerFunction}.`);
       if (c.counterexample) lines.push('Counterexample: ' + JSON.stringify(c.counterexample));
     } else {
-      lines.push('Baseline ' + JSON.stringify(c.before) + ', candidate ' + JSON.stringify(c.after));
+      const {before, after} = c.protectedPositions ?? c;
+      lines.push('Baseline ' + JSON.stringify(before) + ', candidate ' + JSON.stringify(after));
       if (c.field === 'reads' && c.status === 'policy-violation')
         lines.push('Review the additional authority required from the host.');
     }

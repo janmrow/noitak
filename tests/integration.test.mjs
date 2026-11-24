@@ -194,6 +194,32 @@ api.bump({},7);`);
   run(['node_modules/typescript/bin/tsc','--strict','--module','nodenext','--noEmit',host]);
 });
 
+for (const [label, params, protectedName, status, newIndex] of [
+  ['accepts an in-place rename', '(hidden bool) (visible bool)', 'hidden', 0, 0],
+  ['blocks a protected argument swap', '(visible bool) (secret bool)', 'secret', 1, 1]
+]) test('gate ' + label + ' in a private helper', t => {
+  const dir = temporary(t);
+  const baseline = join(dir, 'baseline.noi'), candidate = join(dir, 'candidate.noi'), out = join(dir, 'out');
+  const source = (args, independent) => `(module m 1.0.0
+    (helper choose (${args}) bool (reads) (independent ${independent})
+      (requires true) (ensures true) visible)
+    (fn f ((x bool)) bool (reads) (requires true) (ensures true) (call choose x x)))`;
+  writeFileSync(baseline, source('(secret bool) (visible bool)', 'secret'));
+  writeFileSync(candidate, source(params, protectedName));
+  const review = cli(['gate', baseline, candidate, out], status);
+  assert.ok(review.before.passed && review.after.passed);
+  const body = review.changes.find(c => c.subject === 'f' && c.field === 'body');
+  assert.equal(body.status, 'compatible');
+  assert.equal(body.equalOutcomes, '2');
+  const independence = review.changes.find(c => c.subject === 'choose' && c.field === 'independent');
+  assert.deepEqual(independence.protectedPositions, {
+    before: [{name:'secret',index:0,type:'bool'}],
+    after: [{name:protectedName,index:newIndex,type:'bool'}]
+  });
+  assert.equal(independence.status, status ? 'policy-violation' : 'compatible');
+  assert.equal(existsSync(out), status === 0);
+});
+
 test('wide reducer gate with an exhausted enumeration budget or unavailable auto worker publishes nothing', t => {
   const dir = temporary(t), target = join(dir,'artifact'), src = 'pilot/metering/metering.noi';
   for (const engine of ['enumerate','auto']) {

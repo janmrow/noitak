@@ -6,6 +6,9 @@ import { refinement } from './refinement.mjs';
 import { solveRelation, usesSymbolic } from './symbolic.mjs';
 
 const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const paramTypes = f => f.params.map(([, type]) => type);
+const protectedParams = f => f.params.flatMap(([name, type], index) =>
+  f.independent.includes(name) ? [{name, index, type}] : []);
 
 function compareBodies(old, next) {
   const { cases } = domainOf(old);
@@ -31,7 +34,6 @@ function compareField(old, next, field, context) {
   const unresolved = reason => ({ ...evidence, status: 'undetermined', reason });
   if (!proven) return unresolved('missing-function-proof');
   if (Boolean(old.capacity) !== Boolean(next.capacity)) return unresolved('incompatible-entry-convention');
-  const paramTypes = f => f.params.map(([,type]) => type);
   if (!((collector || positional) ? equal(paramTypes(old), paramTypes(next)) : equal(old.params, next.params)) ||
       !['output', 'reads'].every(k => equal(old[k], next[k])))
     return unresolved('incompatible-interface');
@@ -133,9 +135,15 @@ export function compare(oldUnit, newUnit, before, after) {
     }
     if (!equal(reads, helper.reads))
       record(helper.name, 'helper-reads', helper.reads.some(k => !reads.includes(k)) ? 'policy-violation' : 'compatible', reads, helper.reads);
-    if (prior && !equal(prior.independent, helper.independent))
-      record(helper.name, 'independent', prior.independent.some(k => !helper.independent.includes(k)) ?
-        'policy-violation' : 'compatible', prior.independent, helper.independent);
+    if (prior) {
+      const oldProtected = protectedParams(prior), nextProtected = protectedParams(helper);
+      const signatureMatches = equal(paramTypes(prior), paramTypes(helper)) && equal(prior.output, helper.output);
+      const preserved = !oldProtected.length || (signatureMatches &&
+        oldProtected.every(({index}) => nextProtected.some(p => p.index === index)));
+      if (!preserved || !equal(oldProtected, nextProtected))
+        changes.push({subject: helper.name, field: 'independent', status: preserved ? 'compatible' : 'policy-violation',
+          before: prior.independent, after: helper.independent, protectedPositions: {before: oldProtected, after: nextProtected}});
+    }
   }
   for (const helper of oldHelpers.values()) {
     if (helper.independent.length || helper.ensures !== true || helper.requires !== true)
