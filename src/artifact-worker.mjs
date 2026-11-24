@@ -132,7 +132,7 @@ if (lookups.length && !report.witness) {
     const denied = {ok:false,code:'CAPABILITY',phase:'boundary'};
     let calls = 0;
     const unwanted = () => { calls++; };
-    const otherKey = expectedKey.value === '' ? 'x' : '';
+    const otherKey = expectedKey.value === 'x' ? 'y' : 'x';
     const deniedTokens = [{},module.grantLookup(s.resource,[],unwanted),
       module.grantLookup(s.resource,[otherKey],unwanted),
       module.grantLookup(s.resource + '-', [expectedKey.value],unwanted)];
