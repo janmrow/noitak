@@ -132,8 +132,11 @@ if (lookups.length && !report.witness) {
     const denied = {ok:false,code:'CAPABILITY',phase:'boundary'};
     let calls = 0;
     const unwanted = () => { calls++; };
-    for (const token of [{},module.grantLookup(s.resource,[],unwanted),
-      module.grantLookup(s.resource + '-', [expectedKey.value],unwanted)]) {
+    const otherKey = expectedKey.value === '' ? 'x' : '';
+    const deniedTokens = [{},module.grantLookup(s.resource,[],unwanted),
+      module.grantLookup(s.resource,[otherKey],unwanted),
+      module.grantLookup(s.resource + '-', [expectedKey.value],unwanted)];
+    for (const token of deniedTokens) {
       if (!isDeepStrictEqual(call(token),denied) || calls) throw new Error('Lookup scope mismatch');
     }
     const found = {tag:'found',value:sampleValue(resume.params.at(-1)[1].variants[0].payload,0)};
@@ -148,7 +151,7 @@ if (lookups.length && !report.witness) {
       if (!isDeepStrictEqual(call(token),expected) || !isDeepStrictEqual(observed,[expectedKey.value]))
         throw new Error('Lookup dispatch or response mismatch for ' + s.name);
     }
-    return {service:s.name, authorizedCalls:4, deniedCalls:3};
+    return {service:s.name, authorizedCalls:4, deniedCalls:deniedTokens.length};
   });
 }
 if (post) {

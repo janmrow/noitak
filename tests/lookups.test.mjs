@@ -103,8 +103,9 @@ test('artifact comparison rejects a backend that dispatches outside the grant sc
   const report = verify(compiled,source,256);
   const witnesses = new Map(report.checks.map(c=>[c.function,c.admissionWitness]));
   const result = await checkArtifact(compiled,js,30000,witnesses);
-  assert.deepEqual(result.lookups,[{service:'run',authorizedCalls:4,deniedCalls:3}]);
-  const mutant = js.replace('if (!grant.scope.has(key.value))','if (false)');
+  assert.deepEqual(result.lookups,[{service:'run',authorizedCalls:4,deniedCalls:4}]);
+  // Forged tokens, empty scopes and other namespaces still fail in this mutant.
+  const mutant = js.replace('if (!grant.scope.has(key.value))','if (!grant.scope.size)');
   assert.notEqual(mutant,js);
   await assert.rejects(checkArtifact(compiled,mutant,30000,witnesses),/scope mismatch/);
 });

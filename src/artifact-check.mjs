@@ -42,7 +42,7 @@ export async function checkArtifact(unit, source, timeoutMs = 30000, witnesses =
           return reject(new Error('Invalid artifact comparison report'));
         const effects = reply.lookups ?? [];
         if (!Array.isArray(effects) || effects.length !== (unit.lookups?.length ?? 0) || effects.some((c,i) =>
-          c?.service !== unit.lookups[i].name || c.authorizedCalls !== 4 || c.deniedCalls !== 3))
+          c?.service !== unit.lookups[i].name || c.authorizedCalls !== 4 || c.deniedCalls !== 4))
           return reject(new Error('Incomplete scoped lookup artifact validation'));
         const status = checks.every(c => c.status === 'tested') ? 'tested' : 'incomplete';
         resolve({status, method:'interpreter-differential-v2', timeoutMs, checks, ...(effects.length && {lookups:effects})});

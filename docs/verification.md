@@ -233,8 +233,10 @@ are reported. The existing hard work and capacity policies apply.
 Artifact checking executes emitted ESM in a short-lived Node worker with an
 empty environment, V8 heap and stack limits, and a wall-clock timeout. It
 requires admitted executions and verifies a simulated host handler’s effects
-for each lookup service, including resource mismatch, wrong key, forged
-token and malformed reply. The worker shares process credentials and Node
+for each lookup service, including resource mismatch, an empty scope, a
+correctly namespaced scope containing only a different valid key, a forged
+token and a malformed reply. Each denied call must make zero handler calls.
+The worker shares process credentials and Node
 APIs. It loads only compiler-emitted bytes in the normal build. The worker
 offers isolation of JS state and limited resources, with filesystem and OS
 isolation delegated to the execution environment. Solver subprocesses use

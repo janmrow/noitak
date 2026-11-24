@@ -13,7 +13,7 @@ function run(args, status = 0) {
   return child.stdout;
 }
 const manifest = JSON.parse(run(['noitak.mjs','build','pilot/inventory/inventory.noi',join(out,'verified'),'--engine','auto','--json']));
-assert.deepEqual(manifest.artifactValidation.lookups,[{service:'replenish',authorizedCalls:4,deniedCalls:3}]);
+assert.deepEqual(manifest.artifactValidation.lookups,[{service:'replenish',authorizedCalls:4,deniedCalls:4}]);
 copyFileSync('pilot/inventory/service.mts',join(out,'service.mts'));
 run(['node_modules/typescript/bin/tsc','--strict','--module','nodenext',join(out,'service.mts')]);
 const asyncHandler = join(out,'async-handler.mts');
